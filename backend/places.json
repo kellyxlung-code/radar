@@ -1,0 +1,43 @@
+[
+  {
+    "id": 1,
+    "name": "Halfway Coffee",
+    "lat": 22.282,
+    "lng": 114.155,
+    "district": "Central",
+    "category": "Cafe",
+    "address": "",
+    "source": "manual"
+  },
+  {
+    "id": 2,
+    "name": "Halfway Coffee",
+    "lat": 22.279,
+    "lng": 114.162,
+    "district": "",
+    "category": "Other",
+    "address": "",
+    "source": "import"
+  },
+  {
+    "id": 3,
+    "name": "Unknown",
+    "lat": 22.279,
+    "lng": 114.162,
+    "district": "",
+    "category": "Other",
+    "address": "",
+    "source": "import"
+  },
+  {
+    "id": 4,
+    "name": "Bar Leone",
+    "lat": 22.279,
+    "lng": 114.162,
+    "district": "",
+    "category": "Other",
+    "address": "",
+    "source": "import",
+    "photos": []
+  }
+]

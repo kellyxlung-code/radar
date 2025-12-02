@@ -23,3 +23,10 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Single shared Base for the whole app
 Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from sqlalchemy.orm import Session
 
-from database import get_db
+from main import get_db
 from models import Place, User
 from auth import get_current_user
 from google_places_helper import fetch_place_details_from_google

@@ -18,15 +18,15 @@ from database import Base  # use shared Base
 
 class User(Base):
     """
-    User identified by phone number, with OTP + password login.
+    User identified by phone number with OTP-only login.
     """
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     phone_number = Column(String(50), unique=True, index=True, nullable=False)
 
-    # Permanent hashed password set during OTP verification
-    hashed_password = Column(String(128), nullable=True)
+    # ❌ REMOVED: password — No longer needed for OTP-only
+    # hashed_password = Column(String(128), nullable=True)
 
     # OTP fields
     otp_code = Column(String(6), nullable=True, comment="Temporary 6-digit OTP code")

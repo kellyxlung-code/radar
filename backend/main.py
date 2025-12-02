@@ -11,8 +11,6 @@ import time
 import logging
 import traceback
 import googlemaps
-from google_places_helper import fetch_place_details_from_google
-from pin_place_endpoint import router as pin_router
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -21,9 +19,13 @@ from starlette.requests import Request
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
-from auth import router as auth_router, get_current_user
+# --------- LOAD LOCAL MODULES IN SAFE ORDER (to avoid circular imports) ----------
 from database import Base, engine, SessionLocal
 from models import User, Place
+
+# Routers MUST be imported *after* database/models
+from auth import router as auth_router
+from pin_place_endpoint import router as pin_router
 
 # -------------------------
 # Logging

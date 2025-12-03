@@ -1,178 +1,205 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime, timedelta
-import random
+"""
+Radar Backend - Authentication
+Phone-only OTP with MVP bypass
+"""
+
 import os
-import jwt
-from jwt.exceptions import InvalidTokenError
+import secrets
+from datetime import datetime, timedelta
+from typing import Optional
 
-from database import SessionLocal
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
 from models import User
+from database import get_db
 
-router = APIRouter(
-    prefix="/auth",
-    tags=["Authentication", "OTP Flow"],
-)
-
-# JWT configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key")
+# JWT Configuration
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-CHANGE-IN-PRODUCTION")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 365 * 50  # long lived
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
-OTP_EXPIRY_MINUTES = 5
+# Security
+security = HTTPBearer()
 
-# -------------------------
-# Schemas
-# -------------------------
+# MVP Mode - Accept any 6-digit code for testing
+MVP_MODE = os.getenv("MVP_MODE", "true").lower() == "true"
+MVP_BYPASS_CODE = "123456"
 
-class PhoneNumberRequest(BaseModel):
-    phone_number: str
 
-class VerifyOTPRequest(PhoneNumberRequest):
-    otp_code: str
-    # ❌ password removed
-    # password: str  
+def generate_otp() -> str:
+    """Generate 6-digit OTP"""
+    return ''.join([str(secrets.randbelow(10)) for _ in range(6)])
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
 
-class UserSchema(BaseModel):
-    id: int
-    phone_number: str
-
-    class Config:
-        from_attributes = True
-
-# -------------------------
-# DB Dependency
-# -------------------------
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# -------------------------
-# Utils
-# -------------------------
-
-def get_user_by_phone_number(db: Session, phone_number: str) -> Optional[User]:
-    return db.query(User).filter(User.phone_number == phone_number).first()
-
-# -------------------------
-# JWT helpers
-# -------------------------
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Create JWT access token"""
     to_encode = data.copy()
-    expire = datetime.now() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-
-    to_encode.update(
-        {
-            "exp": int(expire.timestamp()),
-            "user_id": data["user_id"],
-            "sub": str(data["user_id"]),
-        }
-    )
-
+    
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    
     return encoded_jwt
 
-def decode_access_token(token: str) -> Optional[dict]:
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except InvalidTokenError:
-        return None
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User:
-    payload = decode_access_token(token)
-    if payload is None:
-        raise HTTPException(status_code=401, detail="Invalid token")
+async def get_user_by_phone(db: AsyncSession, phone_number: str) -> Optional[User]:
+    """Get user by phone number"""
+    result = await db.execute(
+        select(User).where(User.phone_number == phone_number)
+    )
+    return result.scalar_one_or_none()
 
-    user = db.query(User).filter(User.id == payload.get("user_id")).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid token")
 
+async def create_user(db: AsyncSession, phone_number: str) -> User:
+    """Create new user"""
+    user = User(phone_number=phone_number)
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
     return user
 
-# -------------------------
-# OTP ENDPOINTS
-# -------------------------
 
-@router.post("/send-otp", status_code=status.HTTP_200_OK)
-def send_otp(req: PhoneNumberRequest, db: Session = Depends(get_db)):
-    phone_number = req.phone_number
-    otp_code = "".join([str(random.randint(0, 9)) for _ in range(6)])
-    otp_expires_at = datetime.now() + timedelta(minutes=OTP_EXPIRY_MINUTES)
-
-    user = get_user_by_phone_number(db, phone_number)
+async def send_otp(phone_number: str, db: AsyncSession) -> dict:
+    """
+    Send OTP to phone number
+    MVP: Just generate and store, don't actually send SMS
+    """
+    # Generate OTP
+    otp_code = generate_otp()
+    otp_expires_at = datetime.utcnow() + timedelta(minutes=5)
+    
+    # Find or create user
+    user = await get_user_by_phone(db, phone_number)
     if not user:
-        user = User(
-            phone_number=phone_number,
-            otp_code=otp_code,
-            otp_expires_at=otp_expires_at,
+        user = await create_user(db, phone_number)
+    
+    # Store OTP
+    user.otp_code = otp_code
+    user.otp_expires_at = otp_expires_at
+    await db.commit()
+    
+    # MVP: Return OTP in response for testing
+    if MVP_MODE:
+        return {
+            "message": "OTP sent (MVP mode)",
+            "mock_otp": otp_code,
+            "expires_in_minutes": 5
+        }
+    
+    # Production: Actually send SMS here
+    # TODO: Integrate with Twilio/AWS SNS
+    return {
+        "message": "OTP sent to your phone",
+        "expires_in_minutes": 5
+    }
+
+
+async def verify_otp(phone_number: str, otp_code: str, db: AsyncSession) -> dict:
+    """
+    Verify OTP and return JWT token
+    MVP: Accept "123456" as bypass code
+    """
+    # Get user
+    user = await get_user_by_phone(db, phone_number)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found. Please request OTP first."
         )
-        db.add(user)
-        db.commit()
-    else:
-        user.otp_code = otp_code
-        user.otp_expires_at = otp_expires_at
-        db.commit()
-
-    print(f"📲 MOCK SMS → OTP for {phone_number}: {otp_code}")
-
-    return {"message": "OTP sent", "mock_otp": otp_code}
-
-@router.post("/verify-otp", response_model=Token)
-def verify_otp_and_login(req: VerifyOTPRequest, db: Session = Depends(get_db)):
-
-    user = get_user_by_phone_number(db, req.phone_number)
-    if not user:
-        raise HTTPException(404, "User not found. Request OTP first.")
-
-    if user.otp_code != req.otp_code or (
-        user.otp_expires_at and user.otp_expires_at < datetime.now()
-    ):
-        raise HTTPException(401, "Invalid or expired OTP.")
-
-    # Clear OTP
+    
+    # MVP bypass
+    if MVP_MODE and otp_code == MVP_BYPASS_CODE:
+        # Generate token
+        access_token = create_access_token(data={"sub": user.phone_number})
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user_id": user.id,
+            "mvp_bypass": True
+        }
+    
+    # Check OTP
+    if not user.otp_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No OTP found. Please request OTP first."
+        )
+    
+    # Check expiry
+    if user.otp_expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP expired. Please request a new one."
+        )
+    
+    # Verify OTP
+    if user.otp_code != otp_code:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid OTP code."
+        )
+    
+    # Clear OTP after successful verification
     user.otp_code = None
     user.otp_expires_at = None
+    await db.commit()
+    
+    # Generate token
+    access_token = create_access_token(data={"sub": user.phone_number})
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": user.id
+    }
 
-    # ❌ Remove password storage
-    # user.hashed_password = hash_password(req.password)
 
-    db.commit()
-    db.refresh(user)
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+) -> User:
+    """Get current authenticated user from JWT token"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        phone_number: str = payload.get("sub")
+        
+        if phone_number is None:
+            raise credentials_exception
+            
+    except JWTError:
+        raise credentials_exception
+    
+    user = await get_user_by_phone(db, phone_number)
+    if user is None:
+        raise credentials_exception
+    
+    return user
 
-    # Issue JWT
-    access_token = create_access_token(data={"user_id": user.id})
 
-    return {"access_token": access_token, "token_type": "bearer"}
-
-# -------------------------
-# ❌ PASSWORD LOGIN ENDPOINT REMOVED
-# -------------------------
-
-# @router.post("/token")  <-- You no longer need this
-# def login_for_access_token(...):
-#     pass  # Removed for OTP-only auth
-
-# -------------------------
-# Current User
-# -------------------------
-
-@router.get("/users/me", response_model=UserSchema)
-def read_users_me(current_user: User = Depends(get_current_user)):
-    return current_user
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """Get current user if authenticated, None otherwise"""
+    if not credentials:
+        return None
+    
+    try:
+        return await get_current_user(credentials, db)
+    except HTTPException:
+        return None

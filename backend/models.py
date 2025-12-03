@@ -1,102 +1,150 @@
-# backend/models.py
+"""
+Radar Backend - Database Models
+Optimized for MVP with emoji categories
+"""
 
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Float,
-    Boolean,
-    Text,
-    ForeignKey,
-    DateTime,
-)
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Text, JSON
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
 
-from database import Base  # use shared Base
+Base = declarative_base()
 
 
 class User(Base):
-    """
-    User identified by phone number with OTP-only login.
-    """
+    """User model - phone-only authentication"""
     __tablename__ = "users"
-
+    
     id = Column(Integer, primary_key=True, index=True)
-    phone_number = Column(String(50), unique=True, index=True, nullable=False)
-
-    # ❌ REMOVED: password — No longer needed for OTP-only
-    # hashed_password = Column(String(128), nullable=True)
-
+    phone_number = Column(String, unique=True, index=True, nullable=False)
+    
     # OTP fields
-    otp_code = Column(String(6), nullable=True, comment="Temporary 6-digit OTP code")
-    otp_expires_at = Column(
-        DateTime, nullable=True, comment="Timestamp for OTP expiry"
-    )
-
-    # Relationship to places
-    places = relationship("Place", back_populates="owner")
-
+    otp_code = Column(String, nullable=True)
+    otp_expires_at = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    places = relationship("Place", back_populates="user", cascade="all, delete-orphan")
+    
     def __repr__(self):
-        return ""
+        return f"<User {self.phone_number}>"
 
 
 class Place(Base):
-    """
-    Unified place model:
-    - social source (caption, author, source_url, post_image/video)
-    - venue info (lat,lng,address,category,photos,rating)
-    - user state (owner, is_pinned, notes, confidence)
-    """
+    """Place model - venues pinned by users"""
     __tablename__ = "places"
-
-    # Core identity
+    
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False)
-
-    # Social source
-    source_url = Column(Text, nullable=True)
-    source_type = Column(String(50), nullable=True)  # 'instagram', 'red', 'tiktok'
-    caption = Column(Text, nullable=True)
-    author = Column(String(100), nullable=True)
-    post_image_url = Column(Text, nullable=True)
-    post_video_url = Column(Text, nullable=True)
-    imported_at = Column(DateTime, server_default=func.now(), nullable=False)
-
-    # Venue location data (Google Places)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Basic info
+    name = Column(String, nullable=False, index=True)
+    address = Column(String)
+    district = Column(String, index=True)  # Central, TST, Wan Chai, etc.
+    
+    # Location
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
-    district = Column(String(255), nullable=True)
-    address = Column(Text, nullable=True)
-    place_id = Column(String(255), nullable=True, index=True)
-
-    # Venue details
-    category = Column(String(255), nullable=True)
-    category_emoji = Column(String(10), nullable=True)
-    photo_url = Column(Text, nullable=True)  # main venue photo
-
-    # For now, store opening_hours as JSON-encoded text (can change to JSONB later)
-    opening_hours = Column(Text, nullable=True)
-    is_open_now = Column(Boolean, nullable=True)
-    rating = Column(Float, nullable=True)
-    user_ratings_total = Column(Integer, nullable=True)
-
-    # User relationship
-    owner_id = Column(Integer, ForeignKey("users.id"))
-    owner = relationship("User", back_populates="places")
-    is_pinned = Column(
-        Boolean,
-        default=False,
-        nullable=False,
-        comment="True if the user has confirmed this place (pinned)",
-    )
-
-    # AI confidence / method
-    confidence = Column(Float, nullable=True)
-    extraction_method = Column(String(50), nullable=True)  # 'caption', 'vision', 'manual'
-
-    # User refinement
-    notes = Column(Text, nullable=True, comment="Personal notes added by the user")
-
+    
+    # Google Places data
+    google_place_id = Column(String, unique=True, index=True)
+    photo_url = Column(String)
+    rating = Column(Float)
+    price_level = Column(Integer)  # 1-4
+    opening_hours = Column(JSON)  # Store as JSON
+    phone = Column(String)
+    website = Column(String)
+    
+    # Category & Emoji (Corner-style)
+    category = Column(String, index=True)  # eat, cafes, bars, shops, leisure, go_out
+    emoji = Column(String, default="📍")  # Default pin emoji
+    
+    # Social source
+    source_platform = Column(String)  # instagram, xiaohongshu
+    source_url = Column(String)
+    source_caption = Column(Text)
+    
+    # User state
+    is_visited = Column(Boolean, default=False)
+    is_favorite = Column(Boolean, default=False)
+    user_notes = Column(Text)
+    
+    # AI extracted tags
+    tags = Column(JSON)  # ["aesthetic", "minimal", "brunch"]
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", back_populates="places")
+    
     def __repr__(self):
-        return ""
+        return f"<Place {self.name} ({self.emoji})>"
+
+
+# Category to Emoji mapping (Corner-style)
+CATEGORY_EMOJIS = {
+    "eat": "🍜",           # Restaurants
+    "cafes": "☕",         # Cafes
+    "bars": "🍸",          # Bars & nightlife
+    "shops": "🛍️",        # Shopping
+    "leisure": "🎭",       # Entertainment, activities
+    "go_out": "✨",        # Events, experiences
+    "nature": "🌳",        # Parks, hiking
+    "culture": "🎨",       # Museums, galleries
+    "fitness": "💪",       # Gyms, sports
+    "beauty": "💅",        # Salons, spas
+    "default": "📍"        # Fallback
+}
+
+
+def get_emoji_for_category(category: str) -> str:
+    """Get emoji for a category"""
+    return CATEGORY_EMOJIS.get(category.lower(), CATEGORY_EMOJIS["default"])
+
+
+def get_category_from_tags(tags: list) -> str:
+    """
+    Determine category from AI-extracted tags
+    Similar to how Corner categorizes places
+    """
+    tags_lower = [t.lower() for t in tags]
+    
+    # Cafes
+    if any(word in tags_lower for word in ["cafe", "coffee", "espresso", "latte", "cappuccino"]):
+        return "cafes"
+    
+    # Bars
+    if any(word in tags_lower for word in ["bar", "cocktail", "wine", "beer", "pub", "nightlife"]):
+        return "bars"
+    
+    # Restaurants
+    if any(word in tags_lower for word in ["restaurant", "dining", "food", "cuisine", "noodles", "dim sum"]):
+        return "eat"
+    
+    # Shops
+    if any(word in tags_lower for word in ["shop", "store", "boutique", "retail", "shopping"]):
+        return "shops"
+    
+    # Leisure
+    if any(word in tags_lower for word in ["cinema", "theater", "entertainment", "activity", "fun"]):
+        return "leisure"
+    
+    # Go out
+    if any(word in tags_lower for word in ["event", "party", "club", "experience", "rooftop"]):
+        return "go_out"
+    
+    # Nature
+    if any(word in tags_lower for word in ["park", "nature", "hiking", "beach", "outdoor"]):
+        return "nature"
+    
+    # Culture
+    if any(word in tags_lower for word in ["museum", "gallery", "art", "culture", "exhibition"]):
+        return "culture"
+    
+    # Default to eat (most common)
+    return "eat"

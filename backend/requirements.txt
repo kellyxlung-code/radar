@@ -1,13 +1,29 @@
-fastapi
-uvicorn
-sqlalchemy
-psycopg2-binary
-python-dotenv
-bcrypt
-pyjwt
-requests
-python-multipart
-python-jose
-passlib[bcrypt]
-bcrypt
-googlemaps==4.10.0
+# Radar Backend Dependencies
+# Production-ready for Railway deployment
+
+# Web Framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+
+# Database
+sqlalchemy==2.0.36
+asyncpg==0.30.0  # PostgreSQL async driver
+aiosqlite==0.20.0  # SQLite async driver (dev fallback)
+
+# Authentication
+python-jose[cryptography]==3.3.0
+pyjwt==2.10.1
+
+# HTTP Client
+httpx==0.28.1
+
+# Azure OpenAI
+openai==1.57.4
+
+# Environment
+python-dotenv==1.0.1
+
+# Data validation
+pydantic==2.10.3
+pydantic-settings==2.6.1

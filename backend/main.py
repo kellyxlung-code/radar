@@ -25,6 +25,7 @@ from models import User, Place
 
 # Routers MUST be imported *after* database/models
 from auth import router as auth_router
+from auth import get_current_user
 from pin_place_endpoint import router as pin_router
 
 # -------------------------

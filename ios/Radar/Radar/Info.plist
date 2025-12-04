@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Radar needs your location to show nearby places and calculate distances</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Radar needs access to your contacts to show you which friends are using the app</string>
+	<key>CFBundleDisplayName</key>
+	<string>Radar</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>Radar</string>
+	<key>Privacy - Local Network Usage Description</key>
+	<string>Radar needs access to your local network to connect to its backend.</string>
+	<key>CFBundleIconName
+CFBundleIconName
+</key>
+	<string>AppIcon</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

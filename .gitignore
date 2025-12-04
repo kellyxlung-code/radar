@@ -1,5 +1,19 @@
+# Backend
 backend/.env
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.DS_Store
+
+# iOS
+ios/Radar.xcodeproj/project.xcworkspace/xcuserdata/
+ios/Radar.xcodeproj/xcuserdata/
+ios/Pods/
+ios/.DS_Store
+ios/DerivedData/
+*.mobileprovision
+*.p12
+*.pem
+
+# General
 .DS_Store
-Radar_Expo_Foundation/
-ios/
-node_modules/

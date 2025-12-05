@@ -308,7 +308,7 @@ struct MapViewNew: View {
     }
     
     private func isPlacePinned(_ result: GooglePlaceResult) -> Bool {
-        return places.contains { $0.google_place_id == result.id }
+        return places.contains { $0.place_id == result.id }
     }
     
     private func pinSearchResult(_ result: GooglePlaceResult) {

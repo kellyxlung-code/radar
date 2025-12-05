@@ -15,6 +15,8 @@ struct MapViewNew: View {
     @State private var showSearchResults = false
     @State private var searchResults: [GooglePlaceResult] = []
     @State private var isSearching = false
+    @State private var selectedSearchResult: GooglePlaceResult? = nil
+    @State private var showSearchResultDetail = false
 
     var filteredPlaces: [Place] {
         var filtered = places
@@ -190,6 +192,15 @@ struct MapViewNew: View {
             if showPlaceDetail, let place = selectedPlace {
                 PlaceDetailSheet(place: place, isPresented: $showPlaceDetail)
             }
+            
+            // Search result detail bottom sheet
+            if showSearchResultDetail, let result = selectedSearchResult {
+                SearchResultBottomSheet(
+                    result: result,
+                    isPresented: $showSearchResultDetail,
+                    places: places
+                )
+            }
         }
         .onAppear {
             loadPlaces()
@@ -287,8 +298,13 @@ struct MapViewNew: View {
         showSearchResults = false
         searchResults = []
         
+        // Zoom to location
         region.center = CLLocationCoordinate2D(latitude: result.lat, longitude: result.lng)
         region.span = MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+        
+        // Show bottom sheet
+        selectedSearchResult = result
+        showSearchResultDetail = true
     }
 }
 
@@ -328,13 +344,17 @@ struct GooglePlaceResult: Identifiable, Codable {
     let address: String
     let lat: Double
     let lng: Double
+    let rating: Double?
+    let photoUrl: String?
     
     enum CodingKeys: String, CodingKey {
         case id = "place_id"
         case name
-        case address  // Backend returns "address" not "formatted_address"
+        case address
         case lat
         case lng
+        case rating
+        case photoUrl = "photo_url"
     }
 }
 
@@ -396,6 +416,156 @@ struct PlaceDetailSheet: View {
         .ignoresSafeArea()
         .onTapGesture {
             isPresented = false
+        }
+    }
+}
+
+// MARK: - Search Result Bottom Sheet
+struct SearchResultBottomSheet: View {
+    let result: GooglePlaceResult
+    @Binding var isPresented: Bool
+    let places: [Place]
+    
+    // Check if this place is already pinned
+    private var isPinned: Bool {
+        places.contains { $0.place_id == result.id }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            
+            VStack(alignment: .leading, spacing: 16) {
+                // Header with close button
+                HStack {
+                    Text(result.name)
+                        .font(.title2.bold())
+                        .foregroundColor(.black)
+                    
+                    Spacer()
+                    
+                    Button(action: { isPresented = false }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundColor(.gray)
+                    }
+                }
+                
+                // Photo (if available)
+                if let photoUrl = result.photoUrl, let url = URL(string: photoUrl) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(height: 200)
+                                .clipped()
+                                .cornerRadius(12)
+                        case .failure(_):
+                            placeholderImage
+                        case .empty:
+                            placeholderImage
+                        @unknown default:
+                            placeholderImage
+                        }
+                    }
+                }
+                
+                // Rating
+                if let rating = result.rating {
+                    HStack(spacing: 4) {
+                        ForEach(0..<5) { index in
+                            Image(systemName: index < Int(rating.rounded()) ? "star.fill" : "star")
+                                .foregroundColor(.orange)
+                                .font(.system(size: 14))
+                        }
+                        Text(String(format: "%.1f", rating))
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.black)
+                    }
+                }
+                
+                // Address
+                HStack(spacing: 8) {
+                    Image(systemName: "mappin.circle.fill")
+                        .foregroundColor(.orange)
+                        .font(.system(size: 18))
+                    Text(result.address)
+                        .font(.body)
+                        .foregroundColor(.gray)
+                }
+                
+                // Action buttons
+                HStack(spacing: 12) {
+                    // Directions button
+                    Button(action: {
+                        openDirections()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                                .font(.system(size: 20))
+                            Text("Directions")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                    }
+                    
+                    // Pin status button
+                    Button(action: {
+                        // TODO: Add pin/unpin functionality
+                    }) {
+                        HStack {
+                            Image(systemName: isPinned ? "checkmark.circle.fill" : "plus.circle.fill")
+                                .font(.system(size: 20))
+                            Text(isPinned ? "Pinned" : "Pin")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .foregroundColor(isPinned ? .white : .orange)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(isPinned ? Color.green : Color.orange.opacity(0.1))
+                        .cornerRadius(12)
+                    }
+                }
+            }
+            .padding(20)
+            .background(Color.white)
+            .cornerRadius(20, corners: [.topLeft, .topRight])
+            .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: -5)
+        }
+        .background(
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    isPresented = false
+                }
+        )
+    }
+    
+    private var placeholderImage: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(height: 200)
+            .cornerRadius(12)
+            .overlay(
+                Image(systemName: "photo")
+                    .font(.system(size: 40))
+                    .foregroundColor(.gray)
+            )
+    }
+    
+    private func openDirections() {
+        let coordinate = "\(result.lat),\(result.lng)"
+        let placeName = result.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        
+        // Open Apple Maps with directions
+        if let url = URL(string: "http://maps.apple.com/?daddr=\(coordinate)&q=\(placeName)") {
+            UIApplication.shared.open(url)
         }
     }
 }

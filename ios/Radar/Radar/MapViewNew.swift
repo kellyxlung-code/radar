@@ -11,9 +11,7 @@ struct MapViewNew: View {
         span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
     )
     @State private var selectedPlace: Place? = nil
-    @State private var selectedSearchResult: GooglePlaceResult? = nil
     @State private var showPlaceDetail = false
-    @State private var showSearchResultDetail = false
     @State private var showSearchResults = false
     @State private var searchResults: [GooglePlaceResult] = []
     @State private var isSearching = false
@@ -39,9 +37,10 @@ struct MapViewNew: View {
                                 showPlaceDetail = true
                             }
 
+                        // ✅ FIX: Added explicit black text color
                         Text(place.name)
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.black)
+                            .foregroundColor(.black)  // ✅ BLACK TEXT
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(
@@ -113,7 +112,7 @@ struct MapViewNew: View {
 
                         TextField("Search for places...", text: $searchText)
                             .font(.system(size: 16))
-                            .foregroundColor(.black)
+                            .foregroundColor(.black)  // ✅ BLACK TEXT
                             .onChange(of: searchText) { newValue in
                                 if newValue.count > 2 {
                                     searchGooglePlaces(query: newValue)
@@ -159,11 +158,11 @@ struct MapViewNew: View {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(result.name)
                                                 .font(.system(size: 15, weight: .medium))
-                                                .foregroundColor(.black)
+                                                .foregroundColor(.black)  // ✅ BLACK TEXT
 
                                             Text(result.address)
                                                 .font(.system(size: 13))
-                                                .foregroundColor(.gray)
+                                                .foregroundColor(.gray)  // ✅ GREY TEXT
                                         }
 
                                         Spacer()
@@ -187,19 +186,9 @@ struct MapViewNew: View {
                 .padding(.bottom, 20)
             }
 
-            // Place detail (for pinned places)
+            // Place detail
             if showPlaceDetail, let place = selectedPlace {
                 PlaceDetailSheet(place: place, isPresented: $showPlaceDetail)
-            }
-            
-            // Search result detail (Google Maps style)
-            if showSearchResultDetail, let result = selectedSearchResult {
-                SearchResultDetailSheet(
-                    result: result,
-                    isPresented: $showSearchResultDetail,
-                    isPinned: isPlacePinned(result),
-                    onPin: { pinSearchResult(result) }
-                )
             }
         }
         .onAppear {
@@ -298,42 +287,8 @@ struct MapViewNew: View {
         showSearchResults = false
         searchResults = []
         
-        // Center map on result
         region.center = CLLocationCoordinate2D(latitude: result.lat, longitude: result.lng)
         region.span = MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-        
-        // Show detail popup
-        selectedSearchResult = result
-        showSearchResultDetail = true
-    }
-    
-    private func isPlacePinned(_ result: GooglePlaceResult) -> Bool {
-        return places.contains { $0.place_id == result.id }
-    }
-    
-    private func pinSearchResult(_ result: GooglePlaceResult) {
-        guard let url = URL(string: "\(Config.apiBaseURL)/add-place-by-id") else { return }
-        guard let token = KeychainHelper.shared.readAccessToken() else { return }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
-        let body = ["place_id": result.id]
-        request.httpBody = try? JSONEncoder().encode(body)
-        
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                print("❌ Pin error:", error.localizedDescription)
-                return
-            }
-            
-            DispatchQueue.main.async {
-                loadPlaces() // Reload places to show the new pin
-                showSearchResultDetail = false
-            }
-        }.resume()
     }
 }
 
@@ -350,7 +305,7 @@ struct CategoryFilterChip: View {
                 Text(emoji)
                 Text(text)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(isSelected ? .white : .black)
+                    .foregroundColor(isSelected ? .white : .black)  // ✅ BLACK TEXT when not selected
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -373,8 +328,6 @@ struct GooglePlaceResult: Identifiable, Codable {
     let address: String
     let lat: Double
     let lng: Double
-    let rating: Double?
-    let photoUrl: String?
     
     enum CodingKeys: String, CodingKey {
         case id = "place_id"
@@ -382,140 +335,10 @@ struct GooglePlaceResult: Identifiable, Codable {
         case address = "formatted_address"
         case lat
         case lng
-        case rating
-        case photoUrl = "photo_url"
     }
 }
 
-// MARK: - Search Result Detail Sheet (Google Maps style)
-struct SearchResultDetailSheet: View {
-    let result: GooglePlaceResult
-    @Binding var isPresented: Bool
-    let isPinned: Bool
-    let onPin: () -> Void
-    
-    var body: some View {
-        VStack {
-            Spacer()
-            
-            VStack(alignment: .leading, spacing: 16) {
-                // Header with close button and pin button
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(result.name)
-                            .font(.title2.bold())
-                            .foregroundColor(.black)
-                        
-                        if let rating = result.rating {
-                            HStack(spacing: 4) {
-                                Image(systemName: "star.fill")
-                                    .foregroundColor(.orange)
-                                    .font(.system(size: 14))
-                                Text(String(format: "%.1f", rating))
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(.black)
-                            }
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Pin status button
-                    Button(action: {
-                        if !isPinned {
-                            onPin()
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: isPinned ? "checkmark.circle.fill" : "plus.circle.fill")
-                            Text(isPinned ? "Pinned" : "Pin")
-                                .font(.system(size: 14, weight: .semibold))
-                        }
-                        .foregroundColor(isPinned ? .green : .blue)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(isPinned ? Color.green.opacity(0.1) : Color.blue.opacity(0.1))
-                        )
-                    }
-                    .disabled(isPinned)
-                    
-                    Button(action: { isPresented = false }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(.gray)
-                    }
-                }
-                
-                // Photo
-                if let photoUrl = result.photoUrl, let url = URL(string: photoUrl) {
-                    AsyncImage(url: url) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(height: 200)
-                            .clipped()
-                            .cornerRadius(12)
-                    } placeholder: {
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(height: 200)
-                            .cornerRadius(12)
-                    }
-                }
-                
-                // Address
-                HStack(spacing: 8) {
-                    Image(systemName: "mappin.circle.fill")
-                        .foregroundColor(.orange)
-                    Text(result.address)
-                        .font(.body)
-                        .foregroundColor(.black)
-                }
-                
-                // Directions button
-                Button(action: {
-                    openInMaps()
-                }) {
-                    HStack {
-                        Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
-                        Text("Directions")
-                            .font(.system(size: 16, weight: .semibold))
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(12)
-                }
-                
-                Spacer()
-            }
-            .padding()
-            .frame(maxWidth: .infinity)
-            .background(Color.white)
-            .cornerRadius(20)
-            .shadow(radius: 10)
-            .padding()
-        }
-        .background(Color.black.opacity(0.3))
-        .ignoresSafeArea()
-        .onTapGesture {
-            isPresented = false
-        }
-    }
-    
-    private func openInMaps() {
-        let coordinate = CLLocationCoordinate2D(latitude: result.lat, longitude: result.lng)
-        let placemark = MKPlacemark(coordinate: coordinate)
-        let mapItem = MKMapItem(placemark: placemark)
-        mapItem.name = result.name
-        mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving])
-    }
-}
-
-// MARK: - Place Detail Sheet (for existing pinned places)
+// MARK: - Place Detail Sheet
 struct PlaceDetailSheet: View {
     let place: Place
     @Binding var isPresented: Bool
@@ -532,12 +355,12 @@ struct PlaceDetailSheet: View {
                     VStack(alignment: .leading) {
                         Text(place.name)
                             .font(.title2.bold())
-                            .foregroundColor(.black)
+                            .foregroundColor(.black)  // ✅ BLACK TEXT
                         
                         if let district = place.district {
                             Text(district)
                                 .font(.subheadline)
-                                .foregroundColor(.gray)
+                                .foregroundColor(.gray)  // ✅ GREY TEXT
                         }
                     }
                     
@@ -556,7 +379,7 @@ struct PlaceDetailSheet: View {
                             .foregroundColor(.orange)
                         Text(address)
                             .font(.body)
-                            .foregroundColor(.black)
+                            .foregroundColor(.black)  // ✅ BLACK TEXT
                     }
                 }
                 
@@ -576,4 +399,3 @@ struct PlaceDetailSheet: View {
         }
     }
 }
-

@@ -5,33 +5,56 @@ import Security
 
 // MARK: - Keychain Helper for Share Extension
 private struct ShareKeychainHelper {
-    static let service = "com.yourcompany.radar"
-    static let account = "access_token"
+    static let accessGroup = "group.com.hongkeilung.radar"
     
     static func readAccessToken() -> String? {
-        let query: [String: Any] = [
+        // Try with App Groups first
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: "access_token",
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecAttrAccessGroup as String: accessGroup
         ]
         
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        var result: AnyObject?
+        var status = SecItemCopyMatching(query as CFDictionary, &result)
         
-        guard status == errSecSuccess,
-              let data = item as? Data,
-              let token = String(data: data, encoding: .utf8) else {
-            return nil
+        print("[ShareExtension] Keychain status with App Groups: \(status)")
+        
+        if status == errSecSuccess,
+           let data = result as? Data,
+           let token = String(data: data, encoding: .utf8) {
+            print("[ShareExtension] ✅ Found token with App Groups")
+            return token
         }
-        return token
+        
+        // Fallback: Try without App Groups (old method)
+        query = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: "access_token",
+            kSecReturnData as String: true
+        ]
+        
+        result = nil
+        status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        print("[ShareExtension] Keychain status without App Groups: \(status)")
+        
+        if status == errSecSuccess,
+           let data = result as? Data,
+           let token = String(data: data, encoding: .utf8) {
+            print("[ShareExtension] ✅ Found token without App Groups")
+            return token
+        }
+        
+        print("[ShareExtension] ❌ No token found")
+        return nil
     }
 }
 
 // MARK: - API Config
 private struct ShareAPIConfig {
-    static let baseURL = "https://awake-unity-production-0f2e.up.railway.app"
+    static let baseURL = "https://radar-production-0277.up.railway.app"
 }
 
 // MARK: - Response Models
@@ -186,26 +209,20 @@ class ShareViewController: UIViewController {
             return
         }
         
-        if itemProvider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-            itemProvider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] (item, _) in
-                if let url = item as? URL {
-                    DispatchQueue.main.async {
+        // Check for URL
+        if itemProvider.hasItemConformingToTypeIdentifier("public.url") {
+            itemProvider.loadItem(forTypeIdentifier: "public.url", options: nil) { [weak self] (item, error) in
+                DispatchQueue.main.async {
+                    if let url = item as? URL {
                         self?.sharedURL = url.absoluteString
                         self?.importPlace()
-                    }
-                }
-            }
-        } else if itemProvider.hasItemConformingToTypeIdentifier(UTType.text.identifier) {
-            itemProvider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { [weak self] (item, _) in
-                if let text = item as? String {
-                    DispatchQueue.main.async {
-                        self?.sharedURL = text
-                        self?.importPlace()
+                    } else {
+                        self?.currentState = .error("Could not read URL")
                     }
                 }
             }
         } else {
-            currentState = .error("Unsupported content type")
+            currentState = .error("Please share an Instagram post")
         }
     }
     

@@ -8,14 +8,27 @@ class KeychainHelper {
     private let accessGroup = "group.com.hongkeilung.radar"
     
     func saveAccessToken(_ token: String) {
-        let query: [String: Any] = [
+        // Delete old token WITHOUT access group (if it exists)
+        let oldQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: "access_token"
+        ]
+        SecItemDelete(oldQuery as CFDictionary)
+        
+        // Delete old token WITH access group (if it exists)
+        let groupQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: "access_token",
-            kSecValueData as String: token.data(using: .utf8)!,
-            kSecAttrAccessGroup as String: accessGroup  // ADD THIS LINE
+            kSecAttrAccessGroup as String: accessGroup
         ]
-        SecItemDelete(query as CFDictionary)
-        SecItemAdd(query as CFDictionary, nil)
+        SecItemDelete(groupQuery as CFDictionary)
+        
+        // Save new token WITH access group
+        var saveQuery = groupQuery
+        saveQuery[kSecValueData as String] = token.data(using: .utf8)!
+        let status = SecItemAdd(saveQuery as CFDictionary, nil)
+        
+        print("[Keychain] Save token status: \(status) (0 = success)")
     }
     
     func readAccessToken() -> String? {

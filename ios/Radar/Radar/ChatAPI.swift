@@ -4,7 +4,6 @@ final class ChatAPI {
     static let shared = ChatAPI()
     private init() {}
 
-    // Use Config.swift for consistency
     private var baseURL: String { Config.apiBaseURL }
 
     struct ChatRequestBody: Codable {
@@ -12,16 +11,16 @@ final class ChatAPI {
     }
 
     struct ChatResponseBody: Codable {
-        let response: String  // Backend returns "response" not "reply"
+        let response: String
+        let places: [GooglePlaceResult]?
     }
 
-    func send(message: String) async throws -> String {
+    func send(message: String) async throws -> (String, [GooglePlaceResult]) {
         guard let url = URL(string: "\(baseURL)/chat") else {
             throw NSError(domain: "chat", code: 0,
                           userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
         }
 
-        // Read JWT from your Keychain helper
         guard let token = KeychainHelper.shared.readAccessToken() else {
             throw NSError(domain: "chat", code: 401,
                           userInfo: [NSLocalizedDescriptionKey: "Not logged in"])
@@ -45,7 +44,6 @@ final class ChatAPI {
         }
 
         let decoded = try JSONDecoder().decode(ChatResponseBody.self, from: data)
-        return decoded.response
+        return (decoded.response, decoded.places ?? [])
     }
 }
-

@@ -332,7 +332,7 @@ struct GooglePlaceResult: Identifiable, Codable {
     enum CodingKeys: String, CodingKey {
         case id = "place_id"
         case name
-        case address = "formatted_address"
+        case address  // Backend returns "address" not "formatted_address"
         case lat
         case lng
     }

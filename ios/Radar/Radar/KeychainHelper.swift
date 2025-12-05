@@ -5,7 +5,7 @@ class KeychainHelper {
     static let shared = KeychainHelper()
     
     // ADD THIS LINE - enables sharing between app and extension
-    private let accessGroup = "group.com.hongkeilung.Radar"
+    private let accessGroup = "group.com.hongkeilung.radar"
     
     func saveAccessToken(_ token: String) {
         let query: [String: Any] = [

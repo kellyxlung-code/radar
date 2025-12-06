@@ -672,8 +672,6 @@ struct ImportOptionsSheet: View {
         .presentationDetents([.medium])
         .presentationDragIndicator(.hidden)
     }
-}
-
     
     // MARK: - API Functions
     func extractPlaces() {

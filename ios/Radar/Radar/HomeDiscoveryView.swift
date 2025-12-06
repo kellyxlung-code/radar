@@ -6,15 +6,37 @@ struct HomeDiscoveryView: View {
     @State private var showImportSheet = false
     @State private var userLocation: (lat: Double, lng: Double)? = nil
     @State private var loadError: String? = nil
+    @State private var selectedCategory: String? = nil
+    
+    // Filtered places based on selected category
+    var filteredPlaces: [Place] {
+        if let category = selectedCategory {
+            if category == "trending" {
+                // Show all places sorted by created_at (most recent first)
+                return allPlaces.sorted { ($0.id ?? 0) > ($1.id ?? 0) }
+            } else {
+                // Map category names to database values
+                let categoryMap: [String: String] = [
+                    "coffee": "cafe",
+                    "bars": "bar",
+                    "restaurants": "restaurant",
+                    "activities": "activity"
+                ]
+                let dbCategory = categoryMap[category] ?? category
+                return allPlaces.filter { $0.category?.lowercased() == dbCategory }
+            }
+        }
+        return allPlaces
+    }
 
     // Top trending places (first 3)
     var pickedForYou: [Place] {
-        Array(allPlaces.prefix(3))
+        Array(filteredPlaces.prefix(3))
     }
 
     // Places imported from Instagram/RED (filter by source)
     var fromYourSaves: [Place] {
-        allPlaces.filter { place in
+        filteredPlaces.filter { place in
             (place.source_type?.contains("instagram") == true) ||
             (place.source_type?.contains("red") == true) ||
             (place.source_url?.hasPrefix("http") == true)
@@ -25,7 +47,7 @@ struct HomeDiscoveryView: View {
     var nearbyFavorites: [Place] {
         guard let userLoc = userLocation else { return [] }
 
-        return allPlaces.compactMap { place in
+        return filteredPlaces.compactMap { place in
             let distance = calculateDistance(
                 lat1: userLoc.lat, lng1: userLoc.lng,
                 lat2: place.lat, lng2: place.lng
@@ -62,28 +84,45 @@ struct HomeDiscoveryView: View {
                     ScrollView {
                         VStack(spacing: 32) {
 
-                            // Header
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("discover")
-                                    .font(.system(size: 36, weight: .bold, design: .rounded))
-                                    .foregroundColor(.black)  // ✅ BLACK TEXT
-
-                                Text("places your friends love")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.gray)  // ✅ GREY TEXT
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal)
-                            .padding(.top, 20)
-
                             // Trending categories
+                            Spacer().frame(height: 8)
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 12) {
-                                    CategoryChip(emoji: "🔥", text: "trending")
-                                    CategoryChip(emoji: "☕️", text: "coffee")
-                                    CategoryChip(emoji: "🍸", text: "bars")
-                                    CategoryChip(emoji: "🍽️", text: "restaurants")
-                                    CategoryChip(emoji: "🎯", text: "activities")
+                                    CategoryChip(
+                                        emoji: "🔥",
+                                        text: "trending",
+                                        isSelected: selectedCategory == "trending"
+                                    ) {
+                                        selectedCategory = selectedCategory == "trending" ? nil : "trending"
+                                    }
+                                    CategoryChip(
+                                        emoji: "☕️",
+                                        text: "coffee",
+                                        isSelected: selectedCategory == "coffee"
+                                    ) {
+                                        selectedCategory = selectedCategory == "coffee" ? nil : "coffee"
+                                    }
+                                    CategoryChip(
+                                        emoji: "🍸",
+                                        text: "bars",
+                                        isSelected: selectedCategory == "bars"
+                                    ) {
+                                        selectedCategory = selectedCategory == "bars" ? nil : "bars"
+                                    }
+                                    CategoryChip(
+                                        emoji: "🍽️",
+                                        text: "restaurants",
+                                        isSelected: selectedCategory == "restaurants"
+                                    ) {
+                                        selectedCategory = selectedCategory == "restaurants" ? nil : "restaurants"
+                                    }
+                                    CategoryChip(
+                                        emoji: "🎯",
+                                        text: "activities",
+                                        isSelected: selectedCategory == "activities"
+                                    ) {
+                                        selectedCategory = selectedCategory == "activities" ? nil : "activities"
+                                    }
                                 }
                                 .padding(.horizontal)
                             }
@@ -278,26 +317,31 @@ struct HomeDiscoveryView: View {
 struct CategoryChip: View {
     let emoji: String
     let text: String
+    var isSelected: Bool = false
+    var action: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(emoji)
-            Text(text)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.black)  // ✅ BLACK TEXT
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(emoji)
+                Text(text)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(isSelected ? .white : .black)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(isSelected ? Color.orange : Color(white: 0.95))
+            )
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(
-            Capsule()
-                .fill(Color(white: 0.95))  // Light grey background
-        )
     }
 }
 
 // MARK: - Corner-Style Place Card
 struct CornerStylePlaceCard: View {
     let place: Place
+    @State private var showPlaceDetail = false
     
     var categoryTags: [String] {
         if let tags = place.tags, !tags.isEmpty {
@@ -382,15 +426,17 @@ struct CornerStylePlaceCard: View {
             }
 
             Spacer()
-            
-            Image(systemName: "bookmark")
-                .font(.system(size: 20))
-                .foregroundColor(.gray)
         }
         .padding(16)
         .background(Color(white: 0.98))  // Very light grey background
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+        .onTapGesture {
+            showPlaceDetail = true
+        }
+        .sheet(isPresented: $showPlaceDetail) {
+            PlaceDetailSheet(place: place, isPresented: $showPlaceDetail)
+        }
     }
 }
 
@@ -398,6 +444,7 @@ struct CornerStylePlaceCard: View {
 struct CompactSquareCard: View {
     let place: Place
     let userLocation: (lat: Double, lng: Double)?
+    @State private var showPlaceDetail = false
     
     var distance: String? {
         guard let userLoc = userLocation else { return nil }
@@ -482,6 +529,12 @@ struct CompactSquareCard: View {
         .background(Color(white: 0.98))
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 2)
+        .onTapGesture {
+            showPlaceDetail = true
+        }
+        .sheet(isPresented: $showPlaceDetail) {
+            PlaceDetailSheet(place: place, isPresented: $showPlaceDetail)
+        }
     }
     
     func calculateDistance(lat1: Double, lng1: Double, lat2: Double, lng2: Double) -> Double {

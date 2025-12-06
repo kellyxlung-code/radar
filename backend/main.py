@@ -276,6 +276,92 @@ async def import_url(
 
 
 # ============================================================================
+# Extract Places Endpoint (Multi-place import for home screen)
+# ============================================================================
+
+class ExtractPlacesRequest(BaseModel):
+    url: str = Field(..., example="https://www.instagram.com/p/xxx")
+
+class GooglePlaceResult(BaseModel):
+    place_id: str
+    name: str
+    address: str
+    lat: float
+    lng: float
+    rating: Optional[float]
+    photoUrl: Optional[str]
+    is_saved: bool = False
+
+class ExtractPlacesResponse(BaseModel):
+    places: List[GooglePlaceResult]
+
+@app.post("/extract-places", response_model=ExtractPlacesResponse)
+async def extract_places(
+    request: ExtractPlacesRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Extract MULTIPLE places from any URL (Instagram, blog, website)
+    Returns list of places (NOT saved yet) for user selection
+    """
+    from ai_extraction import extract_multiple_places_from_url
+    
+    url = request.url
+    logger.info(f"🔍 Extracting places from: {url}")
+    
+    # Step 1: Extract all places from URL using AI
+    places_data = await extract_multiple_places_from_url(url)
+    
+    if not places_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not extract any places from URL"
+        )
+    
+    # Step 2: Enrich each place with Google Places data
+    enriched_places = []
+    for place_data in places_data:
+        name = place_data.get("name")
+        district = place_data.get("district")
+        
+        google_data = await enrich_place_data(name, district)
+        if google_data:
+            enriched_places.append(google_data)
+    
+    if not enriched_places:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Could not find any of the extracted places on Google Places"
+        )
+    
+    # Step 3: Check which places are already saved by user
+    saved_place_ids = set()
+    result = await db.execute(
+        select(Place.google_place_id).where(Place.user_id == current_user.id)
+    )
+    saved_place_ids = {pid for (pid,) in result.fetchall() if pid}
+    
+    # Step 4: Build response with is_saved flag
+    response_places = []
+    for place in enriched_places:
+        response_places.append(GooglePlaceResult(
+            place_id=place["place_id"],
+            name=place["name"],
+            address=place["address"],
+            lat=place["lat"],
+            lng=place["lng"],
+            rating=place.get("rating"),
+            photoUrl=place.get("photo_url"),
+            is_saved=place["place_id"] in saved_place_ids
+        ))
+    
+    logger.info(f"✅ Extracted {len(response_places)} place(s)")
+    
+    return ExtractPlacesResponse(places=response_places)
+
+
+# ============================================================================
 # Manual Pin Endpoint (Paste link or search)
 # ============================================================================
 

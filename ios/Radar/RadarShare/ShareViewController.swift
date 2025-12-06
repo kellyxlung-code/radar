@@ -19,16 +19,13 @@ private struct ShareKeychainHelper {
         var result: AnyObject?
         var status = SecItemCopyMatching(query as CFDictionary, &result)
         
-        print("[ShareExtension] Keychain status with App Groups: \(status)")
-        
         if status == errSecSuccess,
            let data = result as? Data,
            let token = String(data: data, encoding: .utf8) {
-            print("[ShareExtension] ✅ Found token with App Groups")
             return token
         }
         
-        // Fallback: Try without App Groups (old method)
+        // Fallback: Try without App Groups
         query = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: "access_token",
@@ -38,16 +35,12 @@ private struct ShareKeychainHelper {
         result = nil
         status = SecItemCopyMatching(query as CFDictionary, &result)
         
-        print("[ShareExtension] Keychain status without App Groups: \(status)")
-        
         if status == errSecSuccess,
            let data = result as? Data,
            let token = String(data: data, encoding: .utf8) {
-            print("[ShareExtension] ✅ Found token without App Groups")
             return token
         }
         
-        print("[ShareExtension] ❌ No token found")
         return nil
     }
 }
@@ -74,16 +67,45 @@ struct PlaceResponse: Codable {
     let tags: [String]?
     let source_url: String?
     let created_at: String
+    let place_id: String?
+}
+
+struct GooglePlaceResult: Codable {
+    let place_id: String
+    let name: String
+    let address: String
+    let lat: Double
+    let lng: Double
+    let rating: Double?
+    let photoUrl: String?
+}
+
+struct GoogleSearchResponse: Codable {
+    let results: [GooglePlaceResult]
 }
 
 struct ErrorResponse: Codable {
     let detail: String
 }
 
+struct PlacesListResponse: Codable {
+    let places: [PlaceResponse]
+}
+
+// MARK: - Selectable Place Model
+struct SelectablePlace {
+    let googlePlace: GooglePlaceResult
+    var isSelected: Bool
+    var isSavedOnRadar: Bool
+}
+
 // MARK: - Share View Controller
 class ShareViewController: UIViewController {
     
     private var sharedURL: String?
+    private var savedPlace: PlaceResponse?
+    private var searchResults: [SelectablePlace] = []
+    private var allSavedPlaces: [PlaceResponse] = []
     
     // UI Elements - Loading State
     private let loadingContainerView = UIView()
@@ -92,6 +114,7 @@ class ShareViewController: UIViewController {
     
     // UI Elements - Success State (Corner-style)
     private let successContainerView = UIView()
+    private var successBottomConstraint: NSLayoutConstraint!
     private let headerLabel = UILabel()
     private let closeButton = UIButton(type: .system)
     private let placeCardView = UIView()
@@ -99,9 +122,19 @@ class ShareViewController: UIViewController {
     private let placeNameLabel = UILabel()
     private let placeAddressLabel = UILabel()
     private let checkmarkImageView = UIImageView()
+    private let savedByYouView = UIView()
+    private let savedIconLabel = UILabel()
     private let savedLabel = UILabel()
     private let searchTextField = UITextField()
     private let addButton = UIButton(type: .system)
+    
+    // UI Elements - Search Mode
+    private let searchContainerView = UIView()
+    private let searchBarView = UIView()
+    private let searchIconImageView = UIImageView()
+    private let searchInputField = UITextField()
+    private let searchCloseButton = UIButton(type: .system)
+    private let searchResultsTableView = UITableView()
     
     // UI Elements - Error State
     private let errorContainerView = UIView()
@@ -112,6 +145,7 @@ class ShareViewController: UIViewController {
     private enum State {
         case loading
         case success(PlaceResponse)
+        case searching
         case error(String)
     }
     
@@ -125,6 +159,14 @@ class ShareViewController: UIViewController {
         super.viewDidLoad()
         setupUI()
         extractSharedURL()
+        
+        // Keyboard notifications
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
     
     // MARK: - UI Setup
@@ -133,11 +175,13 @@ class ShareViewController: UIViewController {
         
         setupLoadingUI()
         setupSuccessUI()
+        setupSearchUI()
         setupErrorUI()
         
         // Show loading by default
         loadingContainerView.isHidden = false
         successContainerView.isHidden = true
+        searchContainerView.isHidden = true
         errorContainerView.isHidden = true
     }
     
@@ -245,21 +289,29 @@ class ShareViewController: UIViewController {
         checkmarkImageView.translatesAutoresizingMaskIntoConstraints = false
         placeCardView.addSubview(checkmarkImageView)
         
-        // "saved on radar" label
-        savedLabel.text = "saved on radar"
+        // "saved by you" view (icon + text)
+        savedByYouView.translatesAutoresizingMaskIntoConstraints = false
+        placeCardView.addSubview(savedByYouView)
+        
+        savedIconLabel.text = "🍜" // Placeholder, will be set dynamically
+        savedIconLabel.font = .systemFont(ofSize: 12)
+        savedIconLabel.translatesAutoresizingMaskIntoConstraints = false
+        savedByYouView.addSubview(savedIconLabel)
+        
+        savedLabel.text = "saved by you"
         savedLabel.font = .systemFont(ofSize: 12)
         savedLabel.textColor = .systemGray2
         savedLabel.translatesAutoresizingMaskIntoConstraints = false
-        placeCardView.addSubview(savedLabel)
+        savedByYouView.addSubview(savedIconLabel)
+        savedByYouView.addSubview(savedLabel)
         
-        // Search text field
+        // Search text field - Light gray background
         searchTextField.placeholder = "find a different place"
         searchTextField.font = .systemFont(ofSize: 16)
         searchTextField.borderStyle = .none
-        searchTextField.backgroundColor = .systemGray6
+        searchTextField.backgroundColor = UIColor.systemGray6
         searchTextField.layer.cornerRadius = 12
-        searchTextField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 16, height: 0))
-        searchTextField.leftViewMode = .always
+        searchTextField.delegate = self
         searchTextField.translatesAutoresizingMaskIntoConstraints = false
         successContainerView.addSubview(searchTextField)
         
@@ -270,20 +322,32 @@ class ShareViewController: UIViewController {
         searchIcon.translatesAutoresizingMaskIntoConstraints = false
         searchTextField.addSubview(searchIcon)
         
+        NSLayoutConstraint.activate([
+            searchIcon.leadingAnchor.constraint(equalTo: searchTextField.leadingAnchor, constant: 16),
+            searchIcon.centerYAnchor.constraint(equalTo: searchTextField.centerYAnchor),
+            searchIcon.widthAnchor.constraint(equalToConstant: 18),
+            searchIcon.heightAnchor.constraint(equalToConstant: 18)
+        ])
+        
+        searchTextField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 44, height: 48))
+        searchTextField.leftViewMode = .always
+        
         // Add button
         addButton.setTitle("add 1 place", for: .normal)
         addButton.setTitleColor(.white, for: .normal)
         addButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
         addButton.backgroundColor = .black
         addButton.layer.cornerRadius = 28
-        addButton.addTarget(self, action: #selector(closeExtension), for: .touchUpInside)
+        addButton.addTarget(self, action: #selector(addPlaces), for: .touchUpInside)
         addButton.translatesAutoresizingMaskIntoConstraints = false
         successContainerView.addSubview(addButton)
+        
+        successBottomConstraint = successContainerView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         
         NSLayoutConstraint.activate([
             successContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             successContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            successContainerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            successBottomConstraint,
             
             headerLabel.topAnchor.constraint(equalTo: successContainerView.topAnchor, constant: 24),
             headerLabel.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
@@ -296,7 +360,7 @@ class ShareViewController: UIViewController {
             placeCardView.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 24),
             placeCardView.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
             placeCardView.trailingAnchor.constraint(equalTo: successContainerView.trailingAnchor, constant: -24),
-            placeCardView.heightAnchor.constraint(equalToConstant: 80),
+            placeCardView.heightAnchor.constraint(equalToConstant: 90),
             
             placeImageView.leadingAnchor.constraint(equalTo: placeCardView.leadingAnchor),
             placeImageView.centerYAnchor.constraint(equalTo: placeCardView.centerYAnchor),
@@ -312,17 +376,20 @@ class ShareViewController: UIViewController {
             placeAddressLabel.trailingAnchor.constraint(equalTo: checkmarkImageView.leadingAnchor, constant: -12),
             
             checkmarkImageView.trailingAnchor.constraint(equalTo: placeCardView.trailingAnchor),
-            checkmarkImageView.topAnchor.constraint(equalTo: placeCardView.topAnchor, constant: 12),
+            checkmarkImageView.topAnchor.constraint(equalTo: placeCardView.topAnchor, constant: 8),
             checkmarkImageView.widthAnchor.constraint(equalToConstant: 24),
             checkmarkImageView.heightAnchor.constraint(equalToConstant: 24),
             
-            savedLabel.topAnchor.constraint(equalTo: checkmarkImageView.bottomAnchor, constant: 4),
-            savedLabel.trailingAnchor.constraint(equalTo: placeCardView.trailingAnchor),
+            savedByYouView.topAnchor.constraint(equalTo: checkmarkImageView.bottomAnchor, constant: 4),
+            savedByYouView.trailingAnchor.constraint(equalTo: placeCardView.trailingAnchor),
+            savedByYouView.heightAnchor.constraint(equalToConstant: 20),
             
-            searchIcon.leadingAnchor.constraint(equalTo: searchTextField.leadingAnchor, constant: 16),
-            searchIcon.centerYAnchor.constraint(equalTo: searchTextField.centerYAnchor),
-            searchIcon.widthAnchor.constraint(equalToConstant: 18),
-            searchIcon.heightAnchor.constraint(equalToConstant: 18),
+            savedIconLabel.leadingAnchor.constraint(equalTo: savedByYouView.leadingAnchor),
+            savedIconLabel.centerYAnchor.constraint(equalTo: savedByYouView.centerYAnchor),
+            
+            savedLabel.leadingAnchor.constraint(equalTo: savedIconLabel.trailingAnchor, constant: 4),
+            savedLabel.trailingAnchor.constraint(equalTo: savedByYouView.trailingAnchor),
+            savedLabel.centerYAnchor.constraint(equalTo: savedByYouView.centerYAnchor),
             
             searchTextField.topAnchor.constraint(equalTo: placeCardView.bottomAnchor, constant: 24),
             searchTextField.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
@@ -335,9 +402,90 @@ class ShareViewController: UIViewController {
             addButton.heightAnchor.constraint(equalToConstant: 56),
             addButton.bottomAnchor.constraint(equalTo: successContainerView.safeAreaLayoutGuide.bottomAnchor, constant: -24)
         ])
+    }
+    
+    private func setupSearchUI() {
+        // Full screen search container
+        searchContainerView.backgroundColor = .white
+        searchContainerView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(searchContainerView)
         
-        // Adjust search icon left padding
-        searchTextField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 44, height: 48))
+        // Search bar at top
+        searchBarView.backgroundColor = .black
+        searchBarView.layer.cornerRadius = 24
+        searchBarView.translatesAutoresizingMaskIntoConstraints = false
+        searchContainerView.addSubview(searchBarView)
+        
+        // Search icon
+        searchIconImageView.image = UIImage(systemName: "magnifyingglass")
+        searchIconImageView.tintColor = .white
+        searchIconImageView.contentMode = .scaleAspectFit
+        searchIconImageView.translatesAutoresizingMaskIntoConstraints = false
+        searchBarView.addSubview(searchIconImageView)
+        
+        // Search input field
+        searchInputField.font = .systemFont(ofSize: 18)
+        searchInputField.textColor = .white
+        searchInputField.attributedPlaceholder = NSAttributedString(
+            string: "bar",
+            attributes: [.foregroundColor: UIColor.white.withAlphaComponent(0.5)]
+        )
+        searchInputField.borderStyle = .none
+        searchInputField.backgroundColor = .clear
+        searchInputField.returnKeyType = .search
+        searchInputField.autocorrectionType = .no
+        searchInputField.delegate = self
+        searchInputField.addTarget(self, action: #selector(searchTextDidChange), for: .editingChanged)
+        searchInputField.translatesAutoresizingMaskIntoConstraints = false
+        searchBarView.addSubview(searchInputField)
+        
+        // Close button
+        searchCloseButton.setTitle("✕", for: .normal)
+        searchCloseButton.setTitleColor(.black, for: .normal)
+        searchCloseButton.titleLabel?.font = .systemFont(ofSize: 24, weight: .light)
+        searchCloseButton.addTarget(self, action: #selector(closeSearch), for: .touchUpInside)
+        searchCloseButton.translatesAutoresizingMaskIntoConstraints = false
+        searchContainerView.addSubview(searchCloseButton)
+        
+        // Results table
+        searchResultsTableView.backgroundColor = .white
+        searchResultsTableView.separatorStyle = .none
+        searchResultsTableView.delegate = self
+        searchResultsTableView.dataSource = self
+        searchResultsTableView.register(SearchResultCell.self, forCellReuseIdentifier: "SearchResultCell")
+        searchResultsTableView.translatesAutoresizingMaskIntoConstraints = false
+        searchContainerView.addSubview(searchResultsTableView)
+        
+        NSLayoutConstraint.activate([
+            searchContainerView.topAnchor.constraint(equalTo: view.topAnchor),
+            searchContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            searchContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            searchContainerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            
+            searchBarView.topAnchor.constraint(equalTo: searchContainerView.safeAreaLayoutGuide.topAnchor, constant: 16),
+            searchBarView.leadingAnchor.constraint(equalTo: searchContainerView.leadingAnchor, constant: 24),
+            searchBarView.trailingAnchor.constraint(equalTo: searchCloseButton.leadingAnchor, constant: -12),
+            searchBarView.heightAnchor.constraint(equalToConstant: 48),
+            
+            searchIconImageView.leadingAnchor.constraint(equalTo: searchBarView.leadingAnchor, constant: 16),
+            searchIconImageView.centerYAnchor.constraint(equalTo: searchBarView.centerYAnchor),
+            searchIconImageView.widthAnchor.constraint(equalToConstant: 20),
+            searchIconImageView.heightAnchor.constraint(equalToConstant: 20),
+            
+            searchInputField.leadingAnchor.constraint(equalTo: searchIconImageView.trailingAnchor, constant: 12),
+            searchInputField.trailingAnchor.constraint(equalTo: searchBarView.trailingAnchor, constant: -16),
+            searchInputField.centerYAnchor.constraint(equalTo: searchBarView.centerYAnchor),
+            
+            searchCloseButton.centerYAnchor.constraint(equalTo: searchBarView.centerYAnchor),
+            searchCloseButton.trailingAnchor.constraint(equalTo: searchContainerView.trailingAnchor, constant: -24),
+            searchCloseButton.widthAnchor.constraint(equalToConstant: 32),
+            searchCloseButton.heightAnchor.constraint(equalToConstant: 32),
+            
+            searchResultsTableView.topAnchor.constraint(equalTo: searchBarView.bottomAnchor, constant: 16),
+            searchResultsTableView.leadingAnchor.constraint(equalTo: searchContainerView.leadingAnchor),
+            searchResultsTableView.trailingAnchor.constraint(equalTo: searchContainerView.trailingAnchor),
+            searchResultsTableView.bottomAnchor.constraint(equalTo: searchContainerView.bottomAnchor)
+        ])
     }
     
     private func setupErrorUI() {
@@ -358,7 +506,7 @@ class ShareViewController: UIViewController {
         errorIconLabel.translatesAutoresizingMaskIntoConstraints = false
         errorContainerView.addSubview(errorIconLabel)
         
-        // Error message - Black text
+        // Error message
         errorMessageLabel.font = .systemFont(ofSize: 16, weight: .medium)
         errorMessageLabel.textAlignment = .center
         errorMessageLabel.textColor = .systemRed
@@ -411,7 +559,7 @@ class ShareViewController: UIViewController {
                 DispatchQueue.main.async {
                     if let url = item as? URL {
                         self?.sharedURL = url.absoluteString
-                        self?.importPlace()
+                        self?.fetchAllSavedPlaces()
                     } else {
                         self?.currentState = .error("Could not read URL")
                     }
@@ -420,6 +568,32 @@ class ShareViewController: UIViewController {
         } else {
             currentState = .error("Please share an Instagram post")
         }
+    }
+    
+    // MARK: - Fetch All Saved Places
+    private func fetchAllSavedPlaces() {
+        guard let token = ShareKeychainHelper.readAccessToken() else {
+            currentState = .error("Please log in to Radar first")
+            return
+        }
+        
+        guard let url = URL(string: "\(ShareAPIConfig.baseURL)/places") else {
+            importPlace() // Fallback to import without checking
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                if let data = data,
+                   let placesResponse = try? JSONDecoder().decode(PlacesListResponse.self, from: data) {
+                    self?.allSavedPlaces = placesResponse.places
+                }
+                self?.importPlace()
+            }
+        }.resume()
     }
     
     // MARK: - Import Place from Backend
@@ -472,6 +646,7 @@ class ShareViewController: UIViewController {
                 // Parse success response
                 do {
                     let place = try JSONDecoder().decode(PlaceResponse.self, from: data)
+                    self?.savedPlace = place
                     self?.currentState = .success(place)
                 } catch {
                     self?.currentState = .error("Failed to parse response")
@@ -480,12 +655,75 @@ class ShareViewController: UIViewController {
         }.resume()
     }
     
+    // MARK: - Search Google Places
+    @objc private func searchTextDidChange() {
+        let query = searchInputField.text ?? ""
+        if query.count > 2 {
+            searchGooglePlaces(query: query)
+        } else {
+            searchResults = []
+            searchResultsTableView.reloadData()
+        }
+    }
+    
+    private func searchGooglePlaces(query: String) {
+        guard let token = ShareKeychainHelper.readAccessToken() else { return }
+        guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return }
+        guard let url = URL(string: "\(ShareAPIConfig.baseURL)/search/autocomplete?query=\(encodedQuery)") else { return }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let data = data else { return }
+            
+            do {
+                let searchResponse = try JSONDecoder().decode(GoogleSearchResponse.self, from: data)
+                DispatchQueue.main.async {
+                    // Convert to SelectablePlace and check if already saved
+                    self?.searchResults = searchResponse.results.map { googlePlace in
+                        let isSaved = self?.allSavedPlaces.contains(where: { $0.place_id == googlePlace.place_id }) ?? false
+                        return SelectablePlace(googlePlace: googlePlace, isSelected: false, isSavedOnRadar: isSaved)
+                    }
+                    self?.searchResultsTableView.reloadData()
+                }
+            } catch {
+                print("Search error: \(error)")
+            }
+        }.resume()
+    }
+    
+    // MARK: - Calculate Selected Unsaved Places Count
+    private func selectedUnsavedPlacesCount() -> Int {
+        // Count the original place if it exists and is selected (always selected in success view)
+        var count = 0
+        if let _ = savedPlace {
+            count = 1
+        }
+        
+        // Add selected search results that are NOT already saved
+        count += searchResults.filter { $0.isSelected && !$0.isSavedOnRadar }.count
+        
+        return count
+    }
+    
+    // MARK: - Update Button Text
+    private func updateAddButtonText() {
+        let count = selectedUnsavedPlacesCount()
+        if count == 1 {
+            addButton.setTitle("add 1 place", for: .normal)
+        } else {
+            addButton.setTitle("add \(count) places", for: .normal)
+        }
+    }
+    
     // MARK: - Update UI
     private func updateUI() {
         switch currentState {
         case .loading:
             loadingContainerView.isHidden = false
             successContainerView.isHidden = true
+            searchContainerView.isHidden = true
             errorContainerView.isHidden = true
             startPulseAnimation()
             
@@ -493,20 +731,24 @@ class ShareViewController: UIViewController {
             stopPulseAnimation()
             loadingContainerView.isHidden = true
             successContainerView.isHidden = false
+            searchContainerView.isHidden = true
             errorContainerView.isHidden = true
             
             // Update place info
             placeNameLabel.text = place.name
             placeAddressLabel.text = place.address ?? "\(place.district ?? ""), Hong Kong"
+            savedIconLabel.text = place.emoji
             
             // Load Google photo
             if let photoURLString = place.photo_url,
                let photoURL = URL(string: photoURLString) {
                 loadImage(from: photoURL)
             } else {
-                // Fallback: show emoji as text in image view
                 placeImageView.backgroundColor = .systemGray6
             }
+            
+            // Update button text
+            updateAddButtonText()
             
             // Animate in from bottom
             successContainerView.transform = CGAffineTransform(translationX: 0, y: 400)
@@ -514,10 +756,18 @@ class ShareViewController: UIViewController {
                 self.successContainerView.transform = .identity
             }
             
+        case .searching:
+            loadingContainerView.isHidden = true
+            successContainerView.isHidden = true
+            searchContainerView.isHidden = false
+            errorContainerView.isHidden = true
+            searchInputField.becomeFirstResponder()
+            
         case .error(let message):
             stopPulseAnimation()
             loadingContainerView.isHidden = true
             successContainerView.isHidden = true
+            searchContainerView.isHidden = true
             errorContainerView.isHidden = false
             errorMessageLabel.text = message
         }
@@ -547,8 +797,293 @@ class ShareViewController: UIViewController {
         }
     }
     
+    // MARK: - Keyboard Handling
+    @objc private func keyboardWillShow(_ notification: Notification) {
+        guard let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        successBottomConstraint.constant = -keyboardFrame.height
+        UIView.animate(withDuration: 0.3) {
+            self.view.layoutIfNeeded()
+        }
+    }
+    
+    @objc private func keyboardWillHide(_ notification: Notification) {
+        successBottomConstraint.constant = 0
+        UIView.animate(withDuration: 0.3) {
+            self.view.layoutIfNeeded()
+        }
+    }
+    
     // MARK: - Actions
     @objc private func closeExtension() {
         extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+    }
+    
+    @objc private func addPlaces() {
+        // Get all selected unsaved places
+        let selectedUnsavedResults = searchResults.filter { $0.isSelected && !$0.isSavedOnRadar }
+        
+        if selectedUnsavedResults.isEmpty {
+            // No new places to add, just close
+            closeExtension()
+            return
+        }
+        
+        // Show loading state
+        addButton.isEnabled = false
+        addButton.setTitle("saving...", for: .normal)
+        addButton.alpha = 0.6
+        
+        // Save all places
+        savePlaces(selectedUnsavedResults.map { $0.googlePlace }) { [weak self] success in
+            DispatchQueue.main.async {
+                if success {
+                    // Show success state briefly before closing
+                    self?.showSuccessAndClose(count: selectedUnsavedResults.count)
+                } else {
+                    // Re-enable button on error
+                    self?.addButton.isEnabled = true
+                    self?.addButton.setTitle("add \(selectedUnsavedResults.count) place\(selectedUnsavedResults.count == 1 ? "" : "s")", for: .normal)
+                    self?.addButton.alpha = 1.0
+                    
+                    // Show error alert
+                    let alert = UIAlertController(
+                        title: "Error",
+                        message: "Failed to save some places. Please try again.",
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self?.present(alert, animated: true)
+                }
+            }
+        }
+    }
+    
+    private func showSuccessAndClose(count: Int) {
+        // Update button to show success
+        addButton.setTitle("✓ saved", for: .normal)
+        addButton.backgroundColor = .systemGreen
+        addButton.alpha = 1.0
+        
+        // Close after brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.closeExtension()
+        }
+    }
+    
+    private func savePlaces(_ places: [GooglePlaceResult], completion: @escaping (Bool) -> Void) {
+        guard let token = ShareKeychainHelper.readAccessToken() else {
+            completion(false)
+            return
+        }
+        
+        let dispatchGroup = DispatchGroup()
+        var allSucceeded = true
+        
+        for place in places {
+            dispatchGroup.enter()
+            
+            guard let url = URL(string: "\(ShareAPIConfig.baseURL)/add-place-by-id") else {
+                allSucceeded = false
+                dispatchGroup.leave()
+                continue
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            
+            let payload: [String: Any] = ["place_id": place.place_id]
+            request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+            
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    print("Error saving place: \(error)")
+                    allSucceeded = false
+                }
+                
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                    print("HTTP error: \(httpResponse.statusCode)")
+                    allSucceeded = false
+                }
+                
+                dispatchGroup.leave()
+            }.resume()
+        }
+        
+        dispatchGroup.notify(queue: .main) {
+            completion(allSucceeded)
+        }
+    }
+    
+    @objc private func closeSearch() {
+        searchInputField.text = ""
+        currentState = .success(savedPlace!)
+        updateAddButtonText()
+    }
+}
+
+// MARK: - UITextFieldDelegate
+extension ShareViewController: UITextFieldDelegate {
+    func textFieldDidBeginEditing(_ textField: UITextField) {
+        if textField == searchTextField {
+            // Expand to full screen search
+            currentState = .searching
+        }
+    }
+    
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return true
+    }
+}
+
+// MARK: - UITableViewDelegate & DataSource
+extension ShareViewController: UITableViewDelegate, UITableViewDataSource {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return searchResults.count
+    }
+    
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "SearchResultCell", for: indexPath) as! SearchResultCell
+        let selectablePlace = searchResults[indexPath.row]
+        cell.configure(with: selectablePlace)
+        return cell
+    }
+    
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        
+        // Toggle selection
+        searchResults[indexPath.row].isSelected.toggle()
+        tableView.reloadRows(at: [indexPath], with: .none)
+        
+        // Update button text
+        updateAddButtonText()
+    }
+    
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        return 100
+    }
+}
+
+// MARK: - Search Result Cell
+class SearchResultCell: UITableViewCell {
+    private let placeImageView = UIImageView()
+    private let nameLabel = UILabel()
+    private let addressLabel = UILabel()
+    private let checkboxView = UIView()
+    private let checkmarkIcon = UIImageView()
+    private let savedLabel = UILabel()
+    
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        setupUI()
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func setupUI() {
+        backgroundColor = .white
+        
+        placeImageView.contentMode = .scaleAspectFill
+        placeImageView.clipsToBounds = true
+        placeImageView.layer.cornerRadius = 8
+        placeImageView.backgroundColor = .systemGray6
+        placeImageView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(placeImageView)
+        
+        nameLabel.font = .systemFont(ofSize: 18, weight: .semibold)
+        nameLabel.textColor = .black
+        nameLabel.numberOfLines = 2
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(nameLabel)
+        
+        addressLabel.font = .systemFont(ofSize: 14)
+        addressLabel.textColor = .systemGray
+        addressLabel.numberOfLines = 2
+        addressLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(addressLabel)
+        
+        checkboxView.layer.borderWidth = 2
+        checkboxView.layer.borderColor = UIColor.systemGray4.cgColor
+        checkboxView.layer.cornerRadius = 15
+        checkboxView.backgroundColor = .white
+        checkboxView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(checkboxView)
+        
+        checkmarkIcon.image = UIImage(systemName: "checkmark")
+        checkmarkIcon.tintColor = .white
+        checkmarkIcon.contentMode = .scaleAspectFit
+        checkmarkIcon.isHidden = true
+        checkmarkIcon.translatesAutoresizingMaskIntoConstraints = false
+        checkboxView.addSubview(checkmarkIcon)
+        
+        savedLabel.text = "saved on radar"
+        savedLabel.font = .systemFont(ofSize: 11)
+        savedLabel.textColor = .systemGray2
+        savedLabel.isHidden = true
+        savedLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(savedLabel)
+        
+        NSLayoutConstraint.activate([
+            placeImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+            placeImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            placeImageView.widthAnchor.constraint(equalToConstant: 60),
+            placeImageView.heightAnchor.constraint(equalToConstant: 60),
+            
+            nameLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
+            nameLabel.leadingAnchor.constraint(equalTo: placeImageView.trailingAnchor, constant: 12),
+            nameLabel.trailingAnchor.constraint(equalTo: checkboxView.leadingAnchor, constant: -12),
+            
+            addressLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 4),
+            addressLabel.leadingAnchor.constraint(equalTo: placeImageView.trailingAnchor, constant: 12),
+            addressLabel.trailingAnchor.constraint(equalTo: checkboxView.leadingAnchor, constant: -12),
+            
+            checkboxView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+            checkboxView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
+            checkboxView.widthAnchor.constraint(equalToConstant: 30),
+            checkboxView.heightAnchor.constraint(equalToConstant: 30),
+            
+            checkmarkIcon.centerXAnchor.constraint(equalTo: checkboxView.centerXAnchor),
+            checkmarkIcon.centerYAnchor.constraint(equalTo: checkboxView.centerYAnchor),
+            checkmarkIcon.widthAnchor.constraint(equalToConstant: 16),
+            checkmarkIcon.heightAnchor.constraint(equalToConstant: 16),
+            
+            savedLabel.topAnchor.constraint(equalTo: checkboxView.bottomAnchor, constant: 4),
+            savedLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24)
+        ])
+    }
+    
+    func configure(with selectablePlace: SelectablePlace) {
+        let result = selectablePlace.googlePlace
+        nameLabel.text = result.name
+        addressLabel.text = result.address
+        
+        // Show/hide saved label
+        savedLabel.isHidden = !selectablePlace.isSavedOnRadar
+        
+        // Update checkbox appearance
+        if selectablePlace.isSelected {
+            checkboxView.backgroundColor = .black
+            checkboxView.layer.borderColor = UIColor.black.cgColor
+            checkmarkIcon.isHidden = false
+        } else {
+            checkboxView.backgroundColor = .white
+            checkboxView.layer.borderColor = UIColor.systemGray4.cgColor
+            checkmarkIcon.isHidden = true
+        }
+        
+        // Load image
+        if let photoURLString = result.photoUrl, let photoURL = URL(string: photoURLString) {
+            URLSession.shared.dataTask(with: photoURL) { [weak self] data, _, _ in
+                guard let data = data, let image = UIImage(data: data) else { return }
+                DispatchQueue.main.async {
+                    self?.placeImageView.image = image
+                }
+            }.resume()
+        }
     }
 }

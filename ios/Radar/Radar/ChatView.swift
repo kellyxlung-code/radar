@@ -3,7 +3,7 @@ import SwiftUI
 struct ChatView: View {
     @State private var messageText = ""
     @State private var messages: [ChatMessage] = [
-        ChatMessage(text: "hey! i'm your radar ai. i'll help you find cool spots in hk. just ask me what you're looking for and i'll hook you up with some recs ✨", isUser: false, places: [])
+        ChatMessage(text: "what are you feeling? ✨", isUser: false, places: [])
     ]
     @State private var isSending = false
     @State private var selectedPlace: GooglePlaceResult? = nil

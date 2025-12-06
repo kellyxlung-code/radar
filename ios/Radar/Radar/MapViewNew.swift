@@ -446,53 +446,60 @@ struct PlaceDetailSheet: View {
                     }
                 }
                 
-                // Buttons: Directions, to try, been
-                HStack(spacing: 12) {
+                // Buttons: Directions, to try, been (all same row)
+                HStack(spacing: 8) {
                     // Directions button
                     Button(action: {
                         openDirections()
                     }) {
-                        HStack {
+                        HStack(spacing: 4) {
                             Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                                .font(.system(size: 16))
                             Text("Directions")
+                                .font(.subheadline)
                         }
-                        .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
+                        .padding(.vertical, 12)
                         .background(Color.blue)
-                        .cornerRadius(12)
+                        .cornerRadius(10)
                     }
                     
-                    // to try / been buttons
-                    VStack(spacing: 8) {
-                        Button(action: {
-                            updateVisitStatus(visited: false)
-                        }) {
+                    // to try button
+                    Button(action: {
+                        updateVisitStatus(visited: false)
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bookmark")
+                                .font(.system(size: 14))
                             Text("to try")
-                                .font(.caption)
-                                .foregroundColor(place.is_visited == false ? .white : .gray)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(place.is_visited == false ? Color.orange : Color.gray.opacity(0.2))
-                                .cornerRadius(8)
+                                .font(.subheadline)
                         }
-                        .disabled(isUpdating)
-                        
-                        Button(action: {
-                            updateVisitStatus(visited: true)
-                        }) {
-                            Text("been")
-                                .font(.caption)
-                                .foregroundColor(place.is_visited == true ? .white : .gray)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(place.is_visited == true ? Color.green : Color.gray.opacity(0.2))
-                                .cornerRadius(8)
-                        }
-                        .disabled(isUpdating)
+                        .foregroundColor(place.is_visited == false ? .white : .gray)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(place.is_visited == false ? Color.orange : Color.gray.opacity(0.2))
+                        .cornerRadius(10)
                     }
-                    .frame(width: 80)
+                    .disabled(isUpdating)
+                    
+                    // been button
+                    Button(action: {
+                        updateVisitStatus(visited: true)
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 14))
+                            Text("been")
+                                .font(.subheadline)
+                        }
+                        .foregroundColor(place.is_visited == true ? .white : .gray)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(place.is_visited == true ? Color.green : Color.gray.opacity(0.2))
+                        .cornerRadius(10)
+                    }
+                    .disabled(isUpdating)
                 }
             }
             .padding()

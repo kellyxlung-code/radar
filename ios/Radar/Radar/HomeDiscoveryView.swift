@@ -533,7 +533,7 @@ struct ImportOptionsSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var linkText = ""
     @State private var isLoading = false
-    @State private var extractedPlaces: [GooglePlaceResult] = []
+    @State private var extractedPlaces: [ImportGooglePlaceResult] = []
     @State private var selectedPlaceIds: Set<String> = []
     @State private var errorMessage: String?
     @State private var showPlacesList = false
@@ -678,13 +678,13 @@ struct ImportOptionsSheet: View {
         isLoading = true
         errorMessage = nil
         
-        guard let url = URL(string: "\(APIConfig.baseURL)/extract-places") else {
+        guard let url = URL(string: "\(Config.apiBaseURL)/extract-places") else {
             errorMessage = "Invalid API URL"
             isLoading = false
             return
         }
         
-        guard let token = KeychainHelper.readAccessToken() else {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
             errorMessage = "Please log in first"
             isLoading = false
             return
@@ -714,7 +714,7 @@ struct ImportOptionsSheet: View {
                 
                 // Check HTTP status
                 if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
-                    if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                    if let errorResponse = try? JSONDecoder().decode(ImportErrorResponse.self, from: data) {
                         errorMessage = errorResponse.detail
                     } else {
                         errorMessage = "Server error (\(httpResponse.statusCode))"
@@ -737,7 +737,7 @@ struct ImportOptionsSheet: View {
     }
     
     func saveSelectedPlaces() {
-        guard let token = KeychainHelper.readAccessToken() else {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
             errorMessage = "Please log in first"
             return
         }
@@ -749,7 +749,7 @@ struct ImportOptionsSheet: View {
         for placeId in selectedPlaceIds {
             group.enter()
             
-            guard let url = URL(string: "\(APIConfig.baseURL)/add-place-by-id") else {
+            guard let url = URL(string: "\(Config.apiBaseURL)/add-place-by-id") else {
                 group.leave()
                 continue
             }
@@ -778,8 +778,8 @@ struct ImportOptionsSheet: View {
     }
 }
 
-// MARK: - Supporting Models
-struct GooglePlaceResult: Codable, Identifiable {
+// MARK: - Supporting Models for Import
+struct ImportGooglePlaceResult: Codable, Identifiable {
     let place_id: String
     let name: String
     let address: String
@@ -793,16 +793,16 @@ struct GooglePlaceResult: Codable, Identifiable {
 }
 
 struct ExtractPlacesResponse: Codable {
-    let places: [GooglePlaceResult]
+    let places: [ImportGooglePlaceResult]
 }
 
-struct ErrorResponse: Codable {
+struct ImportErrorResponse: Codable {
     let detail: String
 }
 
 // MARK: - Place Selection Row
 struct PlaceSelectionRow: View {
-    let place: GooglePlaceResult
+    let place: ImportGooglePlaceResult
     let isSelected: Bool
     let onToggle: () -> Void
     

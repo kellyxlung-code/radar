@@ -296,13 +296,17 @@ class ShareViewController: UIViewController {
         savedLabel.text = "saved by you"
         savedLabel.font = .systemFont(ofSize: 12)
         savedLabel.textColor = .systemGray2
+        savedLabel.isHidden = true // Hidden by default, shown if place is already saved
         savedLabel.translatesAutoresizingMaskIntoConstraints = false
         placeCardView.addSubview(savedLabel)
         
-        // Search text field - White background with dark grey text
-        searchTextField.placeholder = "find a different place"
+        // Search text field - White background with black text
         searchTextField.font = .systemFont(ofSize: 16)
-        searchTextField.textColor = .darkGray
+        searchTextField.textColor = .black
+        searchTextField.attributedPlaceholder = NSAttributedString(
+            string: "find a different place",
+            attributes: [.foregroundColor: UIColor.black]
+        )
         searchTextField.borderStyle = .none
         searchTextField.backgroundColor = .white
         searchTextField.layer.cornerRadius = 12
@@ -658,7 +662,7 @@ class ShareViewController: UIViewController {
     private func searchGooglePlaces(query: String) {
         guard let token = ShareKeychainHelper.readAccessToken() else { return }
         guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return }
-        guard let url = URL(string: "\(ShareAPIConfig.baseURL)/search/autocomplete?query=\(encodedQuery)") else { return }
+        guard let url = URL(string: "\(ShareAPIConfig.baseURL)/search-places?query=\(encodedQuery)") else { return }
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

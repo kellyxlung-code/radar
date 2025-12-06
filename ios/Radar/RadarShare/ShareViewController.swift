@@ -65,8 +65,8 @@ struct PlaceResponse: Codable {
     let district: String?
     let lat: Double
     let lng: Double
-    let category: String  // Required field from backend
-    let emoji: String     // Required field from backend
+    let category: String
+    let emoji: String
     let photo_url: String?
     let rating: Double?
     let is_visited: Bool
@@ -85,13 +85,29 @@ class ShareViewController: UIViewController {
     
     private var sharedURL: String?
     
-    // UI Elements
-    private let containerView = UIView()
-    private let emojiLabel = UILabel()
-    private let statusLabel = UILabel()
-    private let placeNameLabel = UILabel()
-    private let addressLabel = UILabel()
+    // UI Elements - Loading State
+    private let loadingContainerView = UIView()
+    private let loadingEmojiLabel = UILabel()
+    private let loadingStatusLabel = UILabel()
+    
+    // UI Elements - Success State (Corner-style)
+    private let successContainerView = UIView()
+    private let headerLabel = UILabel()
     private let closeButton = UIButton(type: .system)
+    private let placeCardView = UIView()
+    private let placeImageView = UIImageView()
+    private let placeNameLabel = UILabel()
+    private let placeAddressLabel = UILabel()
+    private let checkmarkImageView = UIImageView()
+    private let savedLabel = UILabel()
+    private let searchTextField = UITextField()
+    private let addButton = UIButton(type: .system)
+    
+    // UI Elements - Error State
+    private let errorContainerView = UIView()
+    private let errorIconLabel = UILabel()
+    private let errorMessageLabel = UILabel()
+    private let errorCloseButton = UIButton(type: .system)
     
     private enum State {
         case loading
@@ -113,92 +129,272 @@ class ShareViewController: UIViewController {
     
     // MARK: - UI Setup
     private func setupUI() {
-        view.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        view.backgroundColor = UIColor.black.withAlphaComponent(0.3)
         
-        // Container
-        containerView.backgroundColor = .systemBackground
-        containerView.layer.cornerRadius = 24
-        containerView.layer.shadowColor = UIColor.black.cgColor
-        containerView.layer.shadowOpacity = 0.2
-        containerView.layer.shadowOffset = CGSize(width: 0, height: 10)
-        containerView.layer.shadowRadius = 20
-        containerView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(containerView)
+        setupLoadingUI()
+        setupSuccessUI()
+        setupErrorUI()
         
-        // Emoji (large, animated)
-        emojiLabel.text = "🌍"
-        emojiLabel.font = .systemFont(ofSize: 80)
-        emojiLabel.textAlignment = .center
-        emojiLabel.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(emojiLabel)
+        // Show loading by default
+        loadingContainerView.isHidden = false
+        successContainerView.isHidden = true
+        errorContainerView.isHidden = true
+    }
+    
+    private func setupLoadingUI() {
+        // Container - White background
+        loadingContainerView.backgroundColor = .white
+        loadingContainerView.layer.cornerRadius = 24
+        loadingContainerView.layer.shadowColor = UIColor.black.cgColor
+        loadingContainerView.layer.shadowOpacity = 0.1
+        loadingContainerView.layer.shadowOffset = CGSize(width: 0, height: 4)
+        loadingContainerView.layer.shadowRadius = 12
+        loadingContainerView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(loadingContainerView)
         
-        // Status label
-        statusLabel.text = "finding your next hangout spot..."
-        statusLabel.font = .systemFont(ofSize: 18, weight: .medium)
-        statusLabel.textAlignment = .center
-        statusLabel.textColor = .secondaryLabel
-        statusLabel.numberOfLines = 0
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(statusLabel)
+        // Emoji
+        loadingEmojiLabel.text = "🌍"
+        loadingEmojiLabel.font = .systemFont(ofSize: 60)
+        loadingEmojiLabel.textAlignment = .center
+        loadingEmojiLabel.translatesAutoresizingMaskIntoConstraints = false
+        loadingContainerView.addSubview(loadingEmojiLabel)
         
-        // Place name (hidden initially)
-        placeNameLabel.font = .systemFont(ofSize: 24, weight: .bold)
-        placeNameLabel.textAlignment = .center
-        placeNameLabel.numberOfLines = 0
-        placeNameLabel.alpha = 0
-        placeNameLabel.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(placeNameLabel)
-        
-        // Address (hidden initially)
-        addressLabel.font = .systemFont(ofSize: 16)
-        addressLabel.textAlignment = .center
-        addressLabel.textColor = .secondaryLabel
-        addressLabel.numberOfLines = 0
-        addressLabel.alpha = 0
-        addressLabel.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(addressLabel)
-        
-        // Close button (hidden initially)
-        closeButton.setTitle("Done", for: .normal)
-        closeButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
-        closeButton.backgroundColor = UIColor(red: 0.99, green: 0.45, blue: 0.22, alpha: 1.0) // #FC7339
-        closeButton.setTitleColor(.white, for: .normal)
-        closeButton.layer.cornerRadius = 12
-        closeButton.alpha = 0
-        closeButton.addTarget(self, action: #selector(closeExtension), for: .touchUpInside)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(closeButton)
+        // Status label - Black text
+        loadingStatusLabel.text = "finding your next hangout spot..."
+        loadingStatusLabel.font = .systemFont(ofSize: 16, weight: .medium)
+        loadingStatusLabel.textAlignment = .center
+        loadingStatusLabel.textColor = .black
+        loadingStatusLabel.numberOfLines = 0
+        loadingStatusLabel.translatesAutoresizingMaskIntoConstraints = false
+        loadingContainerView.addSubview(loadingStatusLabel)
         
         NSLayoutConstraint.activate([
-            containerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            containerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            containerView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
-            containerView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
+            loadingContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            loadingContainerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            loadingContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
+            loadingContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
             
-            emojiLabel.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 40),
-            emojiLabel.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
+            loadingEmojiLabel.topAnchor.constraint(equalTo: loadingContainerView.topAnchor, constant: 40),
+            loadingEmojiLabel.centerXAnchor.constraint(equalTo: loadingContainerView.centerXAnchor),
             
-            statusLabel.topAnchor.constraint(equalTo: emojiLabel.bottomAnchor, constant: 24),
-            statusLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 24),
-            statusLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -24),
+            loadingStatusLabel.topAnchor.constraint(equalTo: loadingEmojiLabel.bottomAnchor, constant: 20),
+            loadingStatusLabel.leadingAnchor.constraint(equalTo: loadingContainerView.leadingAnchor, constant: 24),
+            loadingStatusLabel.trailingAnchor.constraint(equalTo: loadingContainerView.trailingAnchor, constant: -24),
+            loadingStatusLabel.bottomAnchor.constraint(equalTo: loadingContainerView.bottomAnchor, constant: -40)
+        ])
+    }
+    
+    private func setupSuccessUI() {
+        // Container - White background, bottom sheet style
+        successContainerView.backgroundColor = .white
+        successContainerView.layer.cornerRadius = 24
+        successContainerView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        successContainerView.layer.shadowColor = UIColor.black.cgColor
+        successContainerView.layer.shadowOpacity = 0.1
+        successContainerView.layer.shadowOffset = CGSize(width: 0, height: -4)
+        successContainerView.layer.shadowRadius = 12
+        successContainerView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(successContainerView)
+        
+        // Header label
+        headerLabel.text = "add to radar"
+        headerLabel.font = .systemFont(ofSize: 18, weight: .semibold)
+        headerLabel.textColor = .black
+        headerLabel.translatesAutoresizingMaskIntoConstraints = false
+        successContainerView.addSubview(headerLabel)
+        
+        // Close button (X)
+        closeButton.setTitle("✕", for: .normal)
+        closeButton.setTitleColor(.black, for: .normal)
+        closeButton.titleLabel?.font = .systemFont(ofSize: 24, weight: .light)
+        closeButton.addTarget(self, action: #selector(closeExtension), for: .touchUpInside)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        successContainerView.addSubview(closeButton)
+        
+        // Place card
+        placeCardView.backgroundColor = .white
+        placeCardView.translatesAutoresizingMaskIntoConstraints = false
+        successContainerView.addSubview(placeCardView)
+        
+        // Place image (Google photo)
+        placeImageView.contentMode = .scaleAspectFill
+        placeImageView.clipsToBounds = true
+        placeImageView.layer.cornerRadius = 8
+        placeImageView.backgroundColor = .systemGray6
+        placeImageView.translatesAutoresizingMaskIntoConstraints = false
+        placeCardView.addSubview(placeImageView)
+        
+        // Place name
+        placeNameLabel.font = .systemFont(ofSize: 18, weight: .semibold)
+        placeNameLabel.textColor = .black
+        placeNameLabel.numberOfLines = 2
+        placeNameLabel.translatesAutoresizingMaskIntoConstraints = false
+        placeCardView.addSubview(placeNameLabel)
+        
+        // Place address
+        placeAddressLabel.font = .systemFont(ofSize: 14)
+        placeAddressLabel.textColor = .systemGray
+        placeAddressLabel.numberOfLines = 2
+        placeAddressLabel.translatesAutoresizingMaskIntoConstraints = false
+        placeCardView.addSubview(placeAddressLabel)
+        
+        // Checkmark
+        checkmarkImageView.image = UIImage(systemName: "checkmark.circle.fill")
+        checkmarkImageView.tintColor = .black
+        checkmarkImageView.contentMode = .scaleAspectFit
+        checkmarkImageView.translatesAutoresizingMaskIntoConstraints = false
+        placeCardView.addSubview(checkmarkImageView)
+        
+        // "saved on radar" label
+        savedLabel.text = "saved on radar"
+        savedLabel.font = .systemFont(ofSize: 12)
+        savedLabel.textColor = .systemGray2
+        savedLabel.translatesAutoresizingMaskIntoConstraints = false
+        placeCardView.addSubview(savedLabel)
+        
+        // Search text field
+        searchTextField.placeholder = "find a different place"
+        searchTextField.font = .systemFont(ofSize: 16)
+        searchTextField.borderStyle = .none
+        searchTextField.backgroundColor = .systemGray6
+        searchTextField.layer.cornerRadius = 12
+        searchTextField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 16, height: 0))
+        searchTextField.leftViewMode = .always
+        searchTextField.translatesAutoresizingMaskIntoConstraints = false
+        successContainerView.addSubview(searchTextField)
+        
+        // Add magnifying glass icon
+        let searchIcon = UIImageView(image: UIImage(systemName: "magnifyingglass"))
+        searchIcon.tintColor = .systemGray
+        searchIcon.contentMode = .scaleAspectFit
+        searchIcon.translatesAutoresizingMaskIntoConstraints = false
+        searchTextField.addSubview(searchIcon)
+        
+        // Add button
+        addButton.setTitle("add 1 place", for: .normal)
+        addButton.setTitleColor(.white, for: .normal)
+        addButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
+        addButton.backgroundColor = .black
+        addButton.layer.cornerRadius = 28
+        addButton.addTarget(self, action: #selector(closeExtension), for: .touchUpInside)
+        addButton.translatesAutoresizingMaskIntoConstraints = false
+        successContainerView.addSubview(addButton)
+        
+        NSLayoutConstraint.activate([
+            successContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            successContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            successContainerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             
-            placeNameLabel.topAnchor.constraint(equalTo: emojiLabel.bottomAnchor, constant: 24),
-            placeNameLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 24),
-            placeNameLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -24),
+            headerLabel.topAnchor.constraint(equalTo: successContainerView.topAnchor, constant: 24),
+            headerLabel.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
             
-            addressLabel.topAnchor.constraint(equalTo: placeNameLabel.bottomAnchor, constant: 12),
-            addressLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 24),
-            addressLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -24),
+            closeButton.centerYAnchor.constraint(equalTo: headerLabel.centerYAnchor),
+            closeButton.trailingAnchor.constraint(equalTo: successContainerView.trailingAnchor, constant: -24),
+            closeButton.widthAnchor.constraint(equalToConstant: 32),
+            closeButton.heightAnchor.constraint(equalToConstant: 32),
             
-            closeButton.topAnchor.constraint(equalTo: addressLabel.bottomAnchor, constant: 32),
-            closeButton.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 24),
-            closeButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -24),
-            closeButton.heightAnchor.constraint(equalToConstant: 50),
-            closeButton.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -32)
+            placeCardView.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 24),
+            placeCardView.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
+            placeCardView.trailingAnchor.constraint(equalTo: successContainerView.trailingAnchor, constant: -24),
+            placeCardView.heightAnchor.constraint(equalToConstant: 80),
+            
+            placeImageView.leadingAnchor.constraint(equalTo: placeCardView.leadingAnchor),
+            placeImageView.centerYAnchor.constraint(equalTo: placeCardView.centerYAnchor),
+            placeImageView.widthAnchor.constraint(equalToConstant: 60),
+            placeImageView.heightAnchor.constraint(equalToConstant: 60),
+            
+            placeNameLabel.topAnchor.constraint(equalTo: placeCardView.topAnchor, constant: 8),
+            placeNameLabel.leadingAnchor.constraint(equalTo: placeImageView.trailingAnchor, constant: 12),
+            placeNameLabel.trailingAnchor.constraint(equalTo: checkmarkImageView.leadingAnchor, constant: -12),
+            
+            placeAddressLabel.topAnchor.constraint(equalTo: placeNameLabel.bottomAnchor, constant: 4),
+            placeAddressLabel.leadingAnchor.constraint(equalTo: placeImageView.trailingAnchor, constant: 12),
+            placeAddressLabel.trailingAnchor.constraint(equalTo: checkmarkImageView.leadingAnchor, constant: -12),
+            
+            checkmarkImageView.trailingAnchor.constraint(equalTo: placeCardView.trailingAnchor),
+            checkmarkImageView.topAnchor.constraint(equalTo: placeCardView.topAnchor, constant: 12),
+            checkmarkImageView.widthAnchor.constraint(equalToConstant: 24),
+            checkmarkImageView.heightAnchor.constraint(equalToConstant: 24),
+            
+            savedLabel.topAnchor.constraint(equalTo: checkmarkImageView.bottomAnchor, constant: 4),
+            savedLabel.trailingAnchor.constraint(equalTo: placeCardView.trailingAnchor),
+            
+            searchIcon.leadingAnchor.constraint(equalTo: searchTextField.leadingAnchor, constant: 16),
+            searchIcon.centerYAnchor.constraint(equalTo: searchTextField.centerYAnchor),
+            searchIcon.widthAnchor.constraint(equalToConstant: 18),
+            searchIcon.heightAnchor.constraint(equalToConstant: 18),
+            
+            searchTextField.topAnchor.constraint(equalTo: placeCardView.bottomAnchor, constant: 24),
+            searchTextField.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
+            searchTextField.trailingAnchor.constraint(equalTo: successContainerView.trailingAnchor, constant: -24),
+            searchTextField.heightAnchor.constraint(equalToConstant: 48),
+            
+            addButton.topAnchor.constraint(equalTo: searchTextField.bottomAnchor, constant: 24),
+            addButton.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
+            addButton.trailingAnchor.constraint(equalTo: successContainerView.trailingAnchor, constant: -24),
+            addButton.heightAnchor.constraint(equalToConstant: 56),
+            addButton.bottomAnchor.constraint(equalTo: successContainerView.safeAreaLayoutGuide.bottomAnchor, constant: -24)
         ])
         
-        // Start pulse animation
-        startPulseAnimation()
+        // Adjust search icon left padding
+        searchTextField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 44, height: 48))
+    }
+    
+    private func setupErrorUI() {
+        // Container - White background
+        errorContainerView.backgroundColor = .white
+        errorContainerView.layer.cornerRadius = 24
+        errorContainerView.layer.shadowColor = UIColor.black.cgColor
+        errorContainerView.layer.shadowOpacity = 0.1
+        errorContainerView.layer.shadowOffset = CGSize(width: 0, height: 4)
+        errorContainerView.layer.shadowRadius = 12
+        errorContainerView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(errorContainerView)
+        
+        // Error icon
+        errorIconLabel.text = "⚠️"
+        errorIconLabel.font = .systemFont(ofSize: 60)
+        errorIconLabel.textAlignment = .center
+        errorIconLabel.translatesAutoresizingMaskIntoConstraints = false
+        errorContainerView.addSubview(errorIconLabel)
+        
+        // Error message - Black text
+        errorMessageLabel.font = .systemFont(ofSize: 16, weight: .medium)
+        errorMessageLabel.textAlignment = .center
+        errorMessageLabel.textColor = .systemRed
+        errorMessageLabel.numberOfLines = 0
+        errorMessageLabel.translatesAutoresizingMaskIntoConstraints = false
+        errorContainerView.addSubview(errorMessageLabel)
+        
+        // Close button
+        errorCloseButton.setTitle("Done", for: .normal)
+        errorCloseButton.setTitleColor(.white, for: .normal)
+        errorCloseButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
+        errorCloseButton.backgroundColor = .black
+        errorCloseButton.layer.cornerRadius = 12
+        errorCloseButton.addTarget(self, action: #selector(closeExtension), for: .touchUpInside)
+        errorCloseButton.translatesAutoresizingMaskIntoConstraints = false
+        errorContainerView.addSubview(errorCloseButton)
+        
+        NSLayoutConstraint.activate([
+            errorContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            errorContainerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            errorContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
+            errorContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
+            
+            errorIconLabel.topAnchor.constraint(equalTo: errorContainerView.topAnchor, constant: 40),
+            errorIconLabel.centerXAnchor.constraint(equalTo: errorContainerView.centerXAnchor),
+            
+            errorMessageLabel.topAnchor.constraint(equalTo: errorIconLabel.bottomAnchor, constant: 20),
+            errorMessageLabel.leadingAnchor.constraint(equalTo: errorContainerView.leadingAnchor, constant: 24),
+            errorMessageLabel.trailingAnchor.constraint(equalTo: errorContainerView.trailingAnchor, constant: -24),
+            
+            errorCloseButton.topAnchor.constraint(equalTo: errorMessageLabel.bottomAnchor, constant: 24),
+            errorCloseButton.leadingAnchor.constraint(equalTo: errorContainerView.leadingAnchor, constant: 24),
+            errorCloseButton.trailingAnchor.constraint(equalTo: errorContainerView.trailingAnchor, constant: -24),
+            errorCloseButton.heightAnchor.constraint(equalToConstant: 50),
+            errorCloseButton.bottomAnchor.constraint(equalTo: errorContainerView.bottomAnchor, constant: -32)
+        ])
     }
     
     // MARK: - Extract Shared URL
@@ -284,68 +480,70 @@ class ShareViewController: UIViewController {
         }.resume()
     }
     
-    // MARK: - Update UI Based on State
+    // MARK: - Update UI
     private func updateUI() {
         switch currentState {
         case .loading:
-            emojiLabel.text = "🌍"
-            statusLabel.text = "finding your next hangout spot..."
-            statusLabel.alpha = 1
-            placeNameLabel.alpha = 0
-            addressLabel.alpha = 0
-            closeButton.alpha = 0
+            loadingContainerView.isHidden = false
+            successContainerView.isHidden = true
+            errorContainerView.isHidden = true
             startPulseAnimation()
             
         case .success(let place):
             stopPulseAnimation()
+            loadingContainerView.isHidden = true
+            successContainerView.isHidden = false
+            errorContainerView.isHidden = true
             
-            // Update emoji to place category
-            emojiLabel.text = place.emoji ?? "📍"
+            // Update place info
+            placeNameLabel.text = place.name
+            placeAddressLabel.text = place.address ?? "\(place.district ?? ""), Hong Kong"
             
-            // Hide status, show place info
-            UIView.animate(withDuration: 0.3) {
-                self.statusLabel.alpha = 0
-            } completion: { _ in
-                self.placeNameLabel.text = place.name
-                self.addressLabel.text = place.district ?? place.address ?? ""
-                
-                UIView.animate(withDuration: 0.4) {
-                    self.placeNameLabel.alpha = 1
-                    self.addressLabel.alpha = 1
-                    self.closeButton.alpha = 1
-                }
+            // Load Google photo
+            if let photoURLString = place.photo_url,
+               let photoURL = URL(string: photoURLString) {
+                loadImage(from: photoURL)
+            } else {
+                // Fallback: show emoji as text in image view
+                placeImageView.backgroundColor = .systemGray6
             }
             
-            // Bounce animation for emoji
-            emojiLabel.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
-            UIView.animate(withDuration: 0.6, delay: 0, usingSpringWithDamping: 0.5, initialSpringVelocity: 0.5) {
-                self.emojiLabel.transform = .identity
+            // Animate in from bottom
+            successContainerView.transform = CGAffineTransform(translationX: 0, y: 400)
+            UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0) {
+                self.successContainerView.transform = .identity
             }
             
         case .error(let message):
             stopPulseAnimation()
-            emojiLabel.text = "⚠️"
-            statusLabel.text = message
-            statusLabel.textColor = .systemRed
-            
-            // Show close button
-            UIView.animate(withDuration: 0.3, delay: 0.5) {
-                self.closeButton.alpha = 1
-            }
+            loadingContainerView.isHidden = true
+            successContainerView.isHidden = true
+            errorContainerView.isHidden = false
+            errorMessageLabel.text = message
         }
+    }
+    
+    // MARK: - Image Loading
+    private func loadImage(from url: URL) {
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let data = data, let image = UIImage(data: data) else { return }
+            DispatchQueue.main.async {
+                self?.placeImageView.image = image
+            }
+        }.resume()
     }
     
     // MARK: - Animations
     private func startPulseAnimation() {
         UIView.animate(withDuration: 1.0, delay: 0, options: [.repeat, .autoreverse, .curveEaseInOut]) {
-            self.emojiLabel.transform = CGAffineTransform(scaleX: 1.1, y: 1.1)
+            self.loadingEmojiLabel.transform = CGAffineTransform(scaleX: 1.1, y: 1.1)
         }
     }
     
     private func stopPulseAnimation() {
-        emojiLabel.layer.removeAllAnimations()
+        loadingEmojiLabel.layer.removeAllAnimations()
         UIView.animate(withDuration: 0.2) {
-            self.emojiLabel.transform = .identity
+            self.loadingEmojiLabel.transform = .identity
         }
     }
     

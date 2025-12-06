@@ -114,7 +114,7 @@ struct MapViewNew: View {
 
                         ZStack(alignment: .leading) {
                             if searchText.isEmpty {
-                                Text("Search for places...")
+                                Text("what tempts you today?")
                                     .font(.system(size: 16))
                                     .foregroundColor(.gray)
                             }

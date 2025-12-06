@@ -726,7 +726,10 @@ class ShareViewController: UIViewController {
             // Update place info
             placeNameLabel.text = place.name
             placeAddressLabel.text = place.address ?? "\(place.district ?? ""), Hong Kong"
-            savedIconLabel.text = place.emoji
+            
+            // Check if place is already saved on radar
+            let isAlreadySaved = allSavedPlaces.contains(where: { $0.place_id == place.place_id })
+            savedLabel.isHidden = !isAlreadySaved
             
             // Load Google photo
             if let photoURLString = place.photo_url,
@@ -983,7 +986,6 @@ class SearchResultCell: UITableViewCell {
     private let addressLabel = UILabel()
     private let checkboxView = UIView()
     private let checkmarkIcon = UIImageView()
-    private let savedLabel = UILabel()
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -1030,13 +1032,6 @@ class SearchResultCell: UITableViewCell {
         checkmarkIcon.translatesAutoresizingMaskIntoConstraints = false
         checkboxView.addSubview(checkmarkIcon)
         
-        savedLabel.text = "saved on radar"
-        savedLabel.font = .systemFont(ofSize: 11)
-        savedLabel.textColor = .systemGray2
-        savedLabel.isHidden = true
-        savedLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(savedLabel)
-        
         NSLayoutConstraint.activate([
             placeImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
             placeImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
@@ -1059,10 +1054,7 @@ class SearchResultCell: UITableViewCell {
             checkmarkIcon.centerXAnchor.constraint(equalTo: checkboxView.centerXAnchor),
             checkmarkIcon.centerYAnchor.constraint(equalTo: checkboxView.centerYAnchor),
             checkmarkIcon.widthAnchor.constraint(equalToConstant: 16),
-            checkmarkIcon.heightAnchor.constraint(equalToConstant: 16),
-            
-            savedLabel.topAnchor.constraint(equalTo: checkboxView.bottomAnchor, constant: 4),
-            savedLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24)
+            checkmarkIcon.heightAnchor.constraint(equalToConstant: 16)
         ])
     }
     
@@ -1070,9 +1062,6 @@ class SearchResultCell: UITableViewCell {
         let result = selectablePlace.googlePlace
         nameLabel.text = result.name
         addressLabel.text = result.address
-        
-        // Show/hide saved label
-        savedLabel.isHidden = !selectablePlace.isSavedOnRadar
         
         // Update checkbox appearance
         if selectablePlace.isSelected {

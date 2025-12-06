@@ -66,7 +66,7 @@ async def autocomplete_search(query: str, location: str = "22.3193,114.1694") ->
                     "address": place_details.get("address", ""),
                     "lat": place_details.get("lat", 0.0),
                     "lng": place_details.get("lng", 0.0),
-                    "photoUrl": place_details.get("photo_url"),
+                    "photoUrl": place_details.get("photo_url"),  # Backend returns photo_url (snake_case)
                     "rating": place_details.get("rating"),
                 })
             else:

@@ -164,7 +164,7 @@ async def process_instagram_url(url: str) -> Optional[Dict]:
         logger.warning("⚠️ No caption found in post")
         return None
     
-    place_info = await extract_place_info(caption, url)
+    place_info = extract_place_from_caption(caption, url)
     if not place_info:
         return None
     
@@ -217,3 +217,99 @@ def extract_place_manual(caption: str) -> Optional[Dict]:
         "district": district,
         "description": caption[:200],  # First 200 chars
     }
+
+
+async def extract_multiple_places_from_url(url: str) -> List[Dict]:
+    """
+    Extract MULTIPLE places from any URL (Instagram, blog, website, etc.)
+    Returns list of place data ready for Google Places enrichment
+    """
+    # Step 1: Fetch content using Microlink
+    metadata = await fetch_instagram_metadata(url)
+    if not metadata:
+        logger.warning(f"⚠️ Could not fetch metadata from: {url}")
+        return []
+    
+    # Step 2: Extract ALL places from content
+    content = metadata.get("description") or metadata.get("title") or ""
+    if not content:
+        logger.warning("⚠️ No content found")
+        return []
+    
+    # Step 3: Use AI to extract multiple places
+    places = await extract_multiple_places_ai(content)
+    
+    # Add source metadata to each place
+    for place in places:
+        place["source_url"] = url
+        place["source_platform"] = "web"
+        place["source_caption"] = content[:200]
+    
+    return places
+
+
+async def extract_multiple_places_ai(content: str) -> List[Dict]:
+    """
+    Use AI to extract ALL places mentioned in content
+    Returns list of place dictionaries
+    """
+    prompt = f"""Extract ALL restaurants, cafes, bars, or venues mentioned in this content.
+
+Content: {content}
+
+Return a JSON array of places. Each place should have:
+- name: The place name
+- district: Hong Kong district (Central, TST, Wan Chai, etc.) or null
+- category: One of [eat, cafes, bars, shops, leisure, go_out, nature, culture]
+- tags: Array of relevant tags
+
+Example:
+[
+  {{
+    "name": "Bar Leone",
+    "district": "Central",
+    "category": "bars",
+    "tags": ["cocktails", "italian"]
+  }},
+  {{
+    "name": "Teakha",
+    "district": "Sheung Wan",
+    "category": "cafes",
+    "tags": ["tea", "cozy"]
+  }}
+]
+
+If no places found, return empty array: []
+
+IMPORTANT: Return ONLY valid JSON, no other text.
+"""
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that extracts structured data from text. Always respond with valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1000,
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        
+        # Parse JSON response
+        places = json.loads(result_text)
+        
+        if not isinstance(places, list):
+            logger.warning("⚠️ AI did not return a list")
+            return []
+        
+        logger.info(f"✅ AI extracted {len(places)} place(s)")
+        return places
+    
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ Failed to parse AI response as JSON: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"❌ Error in AI extraction: {e}")
+        return []

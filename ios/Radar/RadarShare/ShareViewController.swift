@@ -837,7 +837,8 @@ class ShareViewController: UIViewController {
         savePlaces(selectedUnsavedResults.map { $0.googlePlace }) { [weak self] success in
             DispatchQueue.main.async {
                 if success {
-                    self?.closeExtension()
+                    // Show success state briefly before closing
+                    self?.showSuccessAndClose(count: selectedUnsavedResults.count)
                 } else {
                     // Re-enable button on error
                     self?.addButton.isEnabled = true
@@ -854,6 +855,18 @@ class ShareViewController: UIViewController {
                     self?.present(alert, animated: true)
                 }
             }
+        }
+    }
+    
+    private func showSuccessAndClose(count: Int) {
+        // Update button to show success
+        addButton.setTitle("✓ saved", for: .normal)
+        addButton.backgroundColor = .systemGreen
+        addButton.alpha = 1.0
+        
+        // Close after brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.closeExtension()
         }
     }
     

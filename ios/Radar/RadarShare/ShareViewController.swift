@@ -67,6 +67,7 @@ struct PlaceResponse: Codable {
     let tags: [String]?
     let source_url: String?
     let created_at: String
+    let place_id: String?
 }
 
 struct GooglePlaceResult: Codable {
@@ -87,12 +88,24 @@ struct ErrorResponse: Codable {
     let detail: String
 }
 
+struct PlacesListResponse: Codable {
+    let places: [PlaceResponse]
+}
+
+// MARK: - Selectable Place Model
+struct SelectablePlace {
+    let googlePlace: GooglePlaceResult
+    var isSelected: Bool
+    var isSavedOnRadar: Bool
+}
+
 // MARK: - Share View Controller
 class ShareViewController: UIViewController {
     
     private var sharedURL: String?
     private var savedPlace: PlaceResponse?
-    private var searchResults: [GooglePlaceResult] = []
+    private var searchResults: [SelectablePlace] = []
+    private var allSavedPlaces: [PlaceResponse] = []
     
     // UI Elements - Loading State
     private let loadingContainerView = UIView()
@@ -546,7 +559,7 @@ class ShareViewController: UIViewController {
                 DispatchQueue.main.async {
                     if let url = item as? URL {
                         self?.sharedURL = url.absoluteString
-                        self?.importPlace()
+                        self?.fetchAllSavedPlaces()
                     } else {
                         self?.currentState = .error("Could not read URL")
                     }
@@ -555,6 +568,32 @@ class ShareViewController: UIViewController {
         } else {
             currentState = .error("Please share an Instagram post")
         }
+    }
+    
+    // MARK: - Fetch All Saved Places
+    private func fetchAllSavedPlaces() {
+        guard let token = ShareKeychainHelper.readAccessToken() else {
+            currentState = .error("Please log in to Radar first")
+            return
+        }
+        
+        guard let url = URL(string: "\(ShareAPIConfig.baseURL)/places") else {
+            importPlace() // Fallback to import without checking
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                if let data = data,
+                   let placesResponse = try? JSONDecoder().decode(PlacesListResponse.self, from: data) {
+                    self?.allSavedPlaces = placesResponse.places
+                }
+                self?.importPlace()
+            }
+        }.resume()
     }
     
     // MARK: - Import Place from Backend
@@ -641,13 +680,41 @@ class ShareViewController: UIViewController {
             do {
                 let searchResponse = try JSONDecoder().decode(GoogleSearchResponse.self, from: data)
                 DispatchQueue.main.async {
-                    self?.searchResults = searchResponse.results
+                    // Convert to SelectablePlace and check if already saved
+                    self?.searchResults = searchResponse.results.map { googlePlace in
+                        let isSaved = self?.allSavedPlaces.contains(where: { $0.place_id == googlePlace.place_id }) ?? false
+                        return SelectablePlace(googlePlace: googlePlace, isSelected: false, isSavedOnRadar: isSaved)
+                    }
                     self?.searchResultsTableView.reloadData()
                 }
             } catch {
                 print("Search error: \(error)")
             }
         }.resume()
+    }
+    
+    // MARK: - Calculate Selected Unsaved Places Count
+    private func selectedUnsavedPlacesCount() -> Int {
+        // Count the original place if it exists and is selected (always selected in success view)
+        var count = 0
+        if let _ = savedPlace {
+            count = 1
+        }
+        
+        // Add selected search results that are NOT already saved
+        count += searchResults.filter { $0.isSelected && !$0.isSavedOnRadar }.count
+        
+        return count
+    }
+    
+    // MARK: - Update Button Text
+    private func updateAddButtonText() {
+        let count = selectedUnsavedPlacesCount()
+        if count == 1 {
+            addButton.setTitle("add 1 place", for: .normal)
+        } else {
+            addButton.setTitle("add \(count) places", for: .normal)
+        }
     }
     
     // MARK: - Update UI
@@ -679,6 +746,9 @@ class ShareViewController: UIViewController {
             } else {
                 placeImageView.backgroundColor = .systemGray6
             }
+            
+            // Update button text
+            updateAddButtonText()
             
             // Animate in from bottom
             successContainerView.transform = CGAffineTransform(translationX: 0, y: 400)
@@ -750,8 +820,8 @@ class ShareViewController: UIViewController {
     
     @objc private func closeSearch() {
         searchInputField.text = ""
-        searchResults = []
         currentState = .success(savedPlace!)
+        updateAddButtonText()
     }
 }
 
@@ -778,18 +848,24 @@ extension ShareViewController: UITableViewDelegate, UITableViewDataSource {
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "SearchResultCell", for: indexPath) as! SearchResultCell
-        cell.configure(with: searchResults[indexPath.row])
+        let selectablePlace = searchResults[indexPath.row]
+        cell.configure(with: selectablePlace)
         return cell
     }
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        // TODO: Add place to radar
-        closeSearch()
+        
+        // Toggle selection
+        searchResults[indexPath.row].isSelected.toggle()
+        tableView.reloadRows(at: [indexPath], with: .none)
+        
+        // Update button text
+        updateAddButtonText()
     }
     
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 90
+        return 100
     }
 }
 
@@ -799,6 +875,8 @@ class SearchResultCell: UITableViewCell {
     private let nameLabel = UILabel()
     private let addressLabel = UILabel()
     private let checkboxView = UIView()
+    private let checkmarkIcon = UIImageView()
+    private let savedLabel = UILabel()
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -810,6 +888,8 @@ class SearchResultCell: UITableViewCell {
     }
     
     private func setupUI() {
+        backgroundColor = .white
+        
         placeImageView.contentMode = .scaleAspectFill
         placeImageView.clipsToBounds = true
         placeImageView.layer.cornerRadius = 8
@@ -832,8 +912,23 @@ class SearchResultCell: UITableViewCell {
         checkboxView.layer.borderWidth = 2
         checkboxView.layer.borderColor = UIColor.systemGray4.cgColor
         checkboxView.layer.cornerRadius = 15
+        checkboxView.backgroundColor = .white
         checkboxView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(checkboxView)
+        
+        checkmarkIcon.image = UIImage(systemName: "checkmark")
+        checkmarkIcon.tintColor = .white
+        checkmarkIcon.contentMode = .scaleAspectFit
+        checkmarkIcon.isHidden = true
+        checkmarkIcon.translatesAutoresizingMaskIntoConstraints = false
+        checkboxView.addSubview(checkmarkIcon)
+        
+        savedLabel.text = "saved on radar"
+        savedLabel.font = .systemFont(ofSize: 11)
+        savedLabel.textColor = .systemGray2
+        savedLabel.isHidden = true
+        savedLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(savedLabel)
         
         NSLayoutConstraint.activate([
             placeImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
@@ -850,16 +945,40 @@ class SearchResultCell: UITableViewCell {
             addressLabel.trailingAnchor.constraint(equalTo: checkboxView.leadingAnchor, constant: -12),
             
             checkboxView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
-            checkboxView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            checkboxView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
             checkboxView.widthAnchor.constraint(equalToConstant: 30),
-            checkboxView.heightAnchor.constraint(equalToConstant: 30)
+            checkboxView.heightAnchor.constraint(equalToConstant: 30),
+            
+            checkmarkIcon.centerXAnchor.constraint(equalTo: checkboxView.centerXAnchor),
+            checkmarkIcon.centerYAnchor.constraint(equalTo: checkboxView.centerYAnchor),
+            checkmarkIcon.widthAnchor.constraint(equalToConstant: 16),
+            checkmarkIcon.heightAnchor.constraint(equalToConstant: 16),
+            
+            savedLabel.topAnchor.constraint(equalTo: checkboxView.bottomAnchor, constant: 4),
+            savedLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24)
         ])
     }
     
-    func configure(with result: GooglePlaceResult) {
+    func configure(with selectablePlace: SelectablePlace) {
+        let result = selectablePlace.googlePlace
         nameLabel.text = result.name
         addressLabel.text = result.address
         
+        // Show/hide saved label
+        savedLabel.isHidden = !selectablePlace.isSavedOnRadar
+        
+        // Update checkbox appearance
+        if selectablePlace.isSelected {
+            checkboxView.backgroundColor = .black
+            checkboxView.layer.borderColor = UIColor.black.cgColor
+            checkmarkIcon.isHidden = false
+        } else {
+            checkboxView.backgroundColor = .white
+            checkboxView.layer.borderColor = UIColor.systemGray4.cgColor
+            checkmarkIcon.isHidden = true
+        }
+        
+        // Load image
         if let photoURLString = result.photoUrl, let photoURL = URL(string: photoURLString) {
             URLSession.shared.dataTask(with: photoURL) { [weak self] data, _, _ in
                 guard let data = data, let image = UIImage(data: data) else { return }

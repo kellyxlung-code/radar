@@ -104,6 +104,7 @@ class ShareViewController: UIViewController {
     
     private var sharedURL: String?
     private var savedPlace: PlaceResponse?
+    private var isMainPlaceSelected: Bool = true // Main place is selected by default
     private var searchResults: [SelectablePlace] = []
     private var allSavedPlaces: [PlaceResponse] = []
     
@@ -122,8 +123,6 @@ class ShareViewController: UIViewController {
     private let placeNameLabel = UILabel()
     private let placeAddressLabel = UILabel()
     private let checkmarkImageView = UIImageView()
-    private let savedByYouView = UIView()
-    private let savedIconLabel = UILabel()
     private let savedLabel = UILabel()
     private let searchTextField = UITextField()
     private let addButton = UIButton(type: .system)
@@ -282,35 +281,33 @@ class ShareViewController: UIViewController {
         placeAddressLabel.translatesAutoresizingMaskIntoConstraints = false
         placeCardView.addSubview(placeAddressLabel)
         
-        // Checkmark
+        // Checkmark (tappable)
         checkmarkImageView.image = UIImage(systemName: "checkmark.circle.fill")
         checkmarkImageView.tintColor = .black
         checkmarkImageView.contentMode = .scaleAspectFit
+        checkmarkImageView.isUserInteractionEnabled = true
         checkmarkImageView.translatesAutoresizingMaskIntoConstraints = false
         placeCardView.addSubview(checkmarkImageView)
         
-        // "saved by you" view (icon + text)
-        savedByYouView.translatesAutoresizingMaskIntoConstraints = false
-        placeCardView.addSubview(savedByYouView)
+        let checkmarkTap = UITapGestureRecognizer(target: self, action: #selector(toggleMainPlaceSelection))
+        checkmarkImageView.addGestureRecognizer(checkmarkTap)
         
-        savedIconLabel.text = "🍜" // Placeholder, will be set dynamically
-        savedIconLabel.font = .systemFont(ofSize: 12)
-        savedIconLabel.translatesAutoresizingMaskIntoConstraints = false
-        savedByYouView.addSubview(savedIconLabel)
-        
+        // "saved by you" label (no emoji)
         savedLabel.text = "saved by you"
         savedLabel.font = .systemFont(ofSize: 12)
         savedLabel.textColor = .systemGray2
         savedLabel.translatesAutoresizingMaskIntoConstraints = false
-        savedByYouView.addSubview(savedIconLabel)
-        savedByYouView.addSubview(savedLabel)
+        placeCardView.addSubview(savedLabel)
         
-        // Search text field - Light gray background
+        // Search text field - White background with dark grey text
         searchTextField.placeholder = "find a different place"
         searchTextField.font = .systemFont(ofSize: 16)
+        searchTextField.textColor = .darkGray
         searchTextField.borderStyle = .none
-        searchTextField.backgroundColor = UIColor.systemGray6
+        searchTextField.backgroundColor = .white
         searchTextField.layer.cornerRadius = 12
+        searchTextField.layer.borderWidth = 1
+        searchTextField.layer.borderColor = UIColor.systemGray5.cgColor
         searchTextField.delegate = self
         searchTextField.translatesAutoresizingMaskIntoConstraints = false
         successContainerView.addSubview(searchTextField)
@@ -380,16 +377,8 @@ class ShareViewController: UIViewController {
             checkmarkImageView.widthAnchor.constraint(equalToConstant: 24),
             checkmarkImageView.heightAnchor.constraint(equalToConstant: 24),
             
-            savedByYouView.topAnchor.constraint(equalTo: checkmarkImageView.bottomAnchor, constant: 4),
-            savedByYouView.trailingAnchor.constraint(equalTo: placeCardView.trailingAnchor),
-            savedByYouView.heightAnchor.constraint(equalToConstant: 20),
-            
-            savedIconLabel.leadingAnchor.constraint(equalTo: savedByYouView.leadingAnchor),
-            savedIconLabel.centerYAnchor.constraint(equalTo: savedByYouView.centerYAnchor),
-            
-            savedLabel.leadingAnchor.constraint(equalTo: savedIconLabel.trailingAnchor, constant: 4),
-            savedLabel.trailingAnchor.constraint(equalTo: savedByYouView.trailingAnchor),
-            savedLabel.centerYAnchor.constraint(equalTo: savedByYouView.centerYAnchor),
+            savedLabel.topAnchor.constraint(equalTo: placeAddressLabel.bottomAnchor, constant: 4),
+            savedLabel.leadingAnchor.constraint(equalTo: placeImageView.trailingAnchor, constant: 12),
             
             searchTextField.topAnchor.constraint(equalTo: placeCardView.bottomAnchor, constant: 24),
             searchTextField.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
@@ -427,7 +416,7 @@ class ShareViewController: UIViewController {
         searchInputField.font = .systemFont(ofSize: 18)
         searchInputField.textColor = .white
         searchInputField.attributedPlaceholder = NSAttributedString(
-            string: "bar",
+            string: "search places",
             attributes: [.foregroundColor: UIColor.white.withAlphaComponent(0.5)]
         )
         searchInputField.borderStyle = .none
@@ -695,9 +684,9 @@ class ShareViewController: UIViewController {
     
     // MARK: - Calculate Selected Unsaved Places Count
     private func selectedUnsavedPlacesCount() -> Int {
-        // Count the original place if it exists and is selected (always selected in success view)
+        // Count the original place if it exists and is selected
         var count = 0
-        if let _ = savedPlace {
+        if savedPlace != nil && isMainPlaceSelected {
             count = 1
         }
         
@@ -737,7 +726,10 @@ class ShareViewController: UIViewController {
             // Update place info
             placeNameLabel.text = place.name
             placeAddressLabel.text = place.address ?? "\(place.district ?? ""), Hong Kong"
-            savedIconLabel.text = place.emoji
+            
+            // Check if place is already saved on radar
+            let isAlreadySaved = allSavedPlaces.contains(where: { $0.place_id == place.place_id })
+            savedLabel.isHidden = !isAlreadySaved
             
             // Load Google photo
             if let photoURLString = place.photo_url,
@@ -816,6 +808,23 @@ class ShareViewController: UIViewController {
     // MARK: - Actions
     @objc private func closeExtension() {
         extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+    }
+    
+    @objc private func toggleMainPlaceSelection() {
+        // Toggle selection state
+        isMainPlaceSelected.toggle()
+        
+        // Update checkmark appearance
+        if isMainPlaceSelected {
+            checkmarkImageView.image = UIImage(systemName: "checkmark.circle.fill")
+            checkmarkImageView.tintColor = .black
+        } else {
+            checkmarkImageView.image = UIImage(systemName: "circle")
+            checkmarkImageView.tintColor = .systemGray3
+        }
+        
+        // Update button text
+        updateAddButtonText()
     }
     
     @objc private func addPlaces() {
@@ -929,6 +938,9 @@ extension ShareViewController: UITextFieldDelegate {
         if textField == searchTextField {
             // Expand to full screen search
             currentState = .searching
+            // Clear search input and focus it
+            searchInputField.text = ""
+            searchInputField.becomeFirstResponder()
         }
     }
     
@@ -974,7 +986,6 @@ class SearchResultCell: UITableViewCell {
     private let addressLabel = UILabel()
     private let checkboxView = UIView()
     private let checkmarkIcon = UIImageView()
-    private let savedLabel = UILabel()
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -1021,13 +1032,6 @@ class SearchResultCell: UITableViewCell {
         checkmarkIcon.translatesAutoresizingMaskIntoConstraints = false
         checkboxView.addSubview(checkmarkIcon)
         
-        savedLabel.text = "saved on radar"
-        savedLabel.font = .systemFont(ofSize: 11)
-        savedLabel.textColor = .systemGray2
-        savedLabel.isHidden = true
-        savedLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(savedLabel)
-        
         NSLayoutConstraint.activate([
             placeImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
             placeImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
@@ -1050,10 +1054,7 @@ class SearchResultCell: UITableViewCell {
             checkmarkIcon.centerXAnchor.constraint(equalTo: checkboxView.centerXAnchor),
             checkmarkIcon.centerYAnchor.constraint(equalTo: checkboxView.centerYAnchor),
             checkmarkIcon.widthAnchor.constraint(equalToConstant: 16),
-            checkmarkIcon.heightAnchor.constraint(equalToConstant: 16),
-            
-            savedLabel.topAnchor.constraint(equalTo: checkboxView.bottomAnchor, constant: 4),
-            savedLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24)
+            checkmarkIcon.heightAnchor.constraint(equalToConstant: 16)
         ])
     }
     
@@ -1061,9 +1062,6 @@ class SearchResultCell: UITableViewCell {
         let result = selectablePlace.googlePlace
         nameLabel.text = result.name
         addressLabel.text = result.address
-        
-        // Show/hide saved label
-        savedLabel.isHidden = !selectablePlace.isSavedOnRadar
         
         // Update checkbox appearance
         if selectablePlace.isSelected {

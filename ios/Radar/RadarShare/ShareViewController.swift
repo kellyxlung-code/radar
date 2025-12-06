@@ -116,6 +116,7 @@ class ShareViewController: UIViewController {
     // UI Elements - Success State (Corner-style)
     private let successContainerView = UIView()
     private var successBottomConstraint: NSLayoutConstraint!
+    private var selectedPlacesTableHeightConstraint: NSLayoutConstraint!
     private let headerLabel = UILabel()
     private let closeButton = UIButton(type: .system)
     private let placeCardView = UIView()
@@ -398,7 +399,6 @@ class ShareViewController: UIViewController {
             selectedPlacesTableView.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 24),
             selectedPlacesTableView.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
             selectedPlacesTableView.trailingAnchor.constraint(equalTo: successContainerView.trailingAnchor, constant: -24),
-            selectedPlacesTableView.heightAnchor.constraint(equalToConstant: 200), // Will be dynamic
             
             searchTextField.topAnchor.constraint(equalTo: selectedPlacesTableView.bottomAnchor, constant: 24),
             searchTextField.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
@@ -411,6 +411,10 @@ class ShareViewController: UIViewController {
             addButton.heightAnchor.constraint(equalToConstant: 56),
             addButton.bottomAnchor.constraint(equalTo: successContainerView.safeAreaLayoutGuide.bottomAnchor, constant: -24)
         ])
+        
+        // Set initial table height (will be updated dynamically)
+        selectedPlacesTableHeightConstraint = selectedPlacesTableView.heightAnchor.constraint(equalToConstant: 100)
+        selectedPlacesTableHeightConstraint.isActive = true
     }
     
     private func setupSearchUI() {
@@ -724,6 +728,11 @@ class ShareViewController: UIViewController {
         } else {
             addButton.setTitle("add \(count) places", for: .normal)
         }
+        
+        // Update table height based on number of selected places
+        let selectedCount = (savedPlace != nil && isMainPlaceSelected ? 1 : 0) + searchResults.filter { $0.isSelected }.count
+        let tableHeight = CGFloat(selectedCount * 100) // 100px per row
+        selectedPlacesTableHeightConstraint.constant = tableHeight
     }
     
     // MARK: - Update UI

@@ -370,27 +370,18 @@ struct GooglePlaceResult: Identifiable, Codable {
 struct PlaceDetailSheet: View {
     let place: Place
     @Binding var isPresented: Bool
+    @State private var isUpdating = false
     
     var body: some View {
         VStack {
             Spacer()
             
             VStack(alignment: .leading, spacing: 16) {
+                // Header with close button
                 HStack {
-                    Text(place.displayEmoji)
-                        .font(.system(size: 48))
-                    
-                    VStack(alignment: .leading) {
-                        Text(place.name)
-                            .font(.title2.bold())
-                            .foregroundColor(.black)  // ✅ BLACK TEXT
-                        
-                        if let district = place.district {
-                            Text(district)
-                                .font(.subheadline)
-                                .foregroundColor(.gray)  // ✅ GREY TEXT
-                        }
-                    }
+                    Text(place.name)
+                        .font(.title2.bold())
+                        .foregroundColor(.black)
                     
                     Spacer()
                     
@@ -401,17 +392,108 @@ struct PlaceDetailSheet: View {
                     }
                 }
                 
+                // Photo
+                if let photoUrl = place.photo_url, let url = URL(string: photoUrl) {
+                    AsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(height: 200)
+                            .clipped()
+                            .cornerRadius(12)
+                    } placeholder: {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(height: 200)
+                            .cornerRadius(12)
+                    }
+                } else {
+                    // Fallback: Show emoji if no photo
+                    ZStack {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.1))
+                            .frame(height: 200)
+                            .cornerRadius(12)
+                        
+                        Text(place.displayEmoji)
+                            .font(.system(size: 80))
+                    }
+                }
+                
+                // Rating
+                if let rating = place.rating {
+                    HStack(spacing: 4) {
+                        ForEach(0..<5) { index in
+                            Image(systemName: index < Int(rating) ? "star.fill" : "star")
+                                .foregroundColor(.orange)
+                                .font(.system(size: 20))
+                        }
+                        Text(String(format: "%.1f", rating))
+                            .font(.headline)
+                            .foregroundColor(.black)
+                    }
+                }
+                
+                // Address
                 if let address = place.address {
                     HStack(spacing: 8) {
                         Image(systemName: "mappin.circle.fill")
                             .foregroundColor(.orange)
                         Text(address)
                             .font(.body)
-                            .foregroundColor(.black)  // ✅ BLACK TEXT
+                            .foregroundColor(.gray)
+                            .lineLimit(2)
                     }
                 }
                 
-                Spacer()
+                // Buttons: Directions, to try, been
+                HStack(spacing: 12) {
+                    // Directions button
+                    Button(action: {
+                        openDirections()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                            Text("Directions")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                    }
+                    
+                    // to try / been buttons
+                    VStack(spacing: 8) {
+                        Button(action: {
+                            updateVisitStatus(visited: false)
+                        }) {
+                            Text("to try")
+                                .font(.caption)
+                                .foregroundColor(place.is_visited == false ? .white : .gray)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(place.is_visited == false ? Color.orange : Color.gray.opacity(0.2))
+                                .cornerRadius(8)
+                        }
+                        .disabled(isUpdating)
+                        
+                        Button(action: {
+                            updateVisitStatus(visited: true)
+                        }) {
+                            Text("been")
+                                .font(.caption)
+                                .foregroundColor(place.is_visited == true ? .white : .gray)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(place.is_visited == true ? Color.green : Color.gray.opacity(0.2))
+                                .cornerRadius(8)
+                        }
+                        .disabled(isUpdating)
+                    }
+                    .frame(width: 80)
+                }
             }
             .padding()
             .frame(maxWidth: .infinity)
@@ -425,6 +507,49 @@ struct PlaceDetailSheet: View {
         .onTapGesture {
             isPresented = false
         }
+    }
+    
+    func openDirections() {
+        let coordinate = CLLocationCoordinate2D(latitude: place.lat, longitude: place.lng)
+        let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
+        mapItem.name = place.name
+        mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving])
+    }
+    
+    func updateVisitStatus(visited: Bool) {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
+            print("❌ No auth token")
+            return
+        }
+        
+        isUpdating = true
+        
+        guard let url = URL(string: "\(Config.apiBaseURL)/places/\(place.id)") else {
+            isUpdating = false
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let payload: [String: Any] = ["is_visited": visited]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                isUpdating = false
+                
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    print("✅ Updated visit status: \(visited)")
+                    // Close sheet after update
+                    isPresented = false
+                } else {
+                    print("❌ Failed to update visit status")
+                }
+            }
+        }.resume()
     }
 }
 

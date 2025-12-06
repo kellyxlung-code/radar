@@ -465,39 +465,35 @@ struct PlaceDetailSheet: View {
                         .cornerRadius(10)
                     }
                     
-                    // to try button
+                    // Want to try button
                     Button(action: {
                         updateVisitStatus(visited: false)
                     }) {
                         HStack(spacing: 4) {
-                            Image(systemName: "bookmark")
-                                .font(.system(size: 14))
-                            Text("to try")
+                            Image(systemName: place.is_visited == false ? "star.fill" : "star")
+                                .font(.system(size: 16))
+                            Text("Want to try")
                                 .font(.subheadline)
                         }
-                        .foregroundColor(place.is_visited == false ? .white : .gray)
+                        .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(place.is_visited == false ? Color.orange : Color.gray.opacity(0.2))
-                        .cornerRadius(10)
                     }
                     .disabled(isUpdating)
                     
-                    // been button
+                    // Visited button
                     Button(action: {
                         updateVisitStatus(visited: true)
                     }) {
                         HStack(spacing: 4) {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 14))
-                            Text("been")
+                            Image(systemName: place.is_visited == true ? "checkmark.circle.fill" : "checkmark.circle")
+                                .font(.system(size: 16))
+                            Text("Visited")
                                 .font(.subheadline)
                         }
-                        .foregroundColor(place.is_visited == true ? .white : .gray)
+                        .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(place.is_visited == true ? Color.green : Color.gray.opacity(0.2))
-                        .cornerRadius(10)
                     }
                     .disabled(isUpdating)
                 }

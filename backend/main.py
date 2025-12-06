@@ -24,7 +24,7 @@ from database import init_db, get_db
 from models import User, Place, get_emoji_for_category, get_category_from_tags
 from auth import send_otp, verify_otp, get_current_user, MVP_MODE
 from google_places import enrich_place_data, extract_district_from_address
-from ai_extraction import process_instagram_url, extract_place_manual
+from ai_extraction import process_instagram_url, extract_place_manual, detect_category
 from google_places_autocomplete import autocomplete_search, get_place_details
 
 # Logging
@@ -218,9 +218,10 @@ async def import_url(
         )
     
     # Step 3: Merge data
-    # Determine category and emoji
+    # Determine category using AI
     tags = ai_data.get("tags", [])
-    category = ai_data.get("category") or get_category_from_tags(tags)
+    description = ai_data.get("source_caption", "") or google_data.get("address", "")
+    category = detect_category(google_data.get("name"), description)
     emoji = get_emoji_for_category(category)
     
     # Extract district from Google address if not from AI
@@ -669,9 +670,10 @@ async def add_place_by_id(
             detail="Could not find place details"
         )
     
-    # Determine category from types
+    # Determine category using AI
     types = google_data.get("types", [])
-    category = get_category_from_tags(types)
+    description = google_data.get("address", "")
+    category = detect_category(google_data.get("name"), description)
     emoji = get_emoji_for_category(category)
     
     # Extract district

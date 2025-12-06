@@ -51,14 +51,35 @@ async def autocomplete_search(query: str, location: str = "22.3193,114.1694") ->
         
         predictions = data.get("predictions", [])
         
-        # Format results
+        # Format results with place details (including photos)
         results = []
         for pred in predictions[:10]:  # Limit to 10 results
-            results.append({
-                "place_id": pred.get("place_id"),
-                "name": pred.get("structured_formatting", {}).get("main_text", ""),
-                "address": pred.get("description", ""),
-            })
+            place_id = pred.get("place_id")
+            
+            # Get full place details to include photo
+            place_details = await get_place_details(place_id)
+            
+            if place_details:
+                results.append({
+                    "place_id": place_details.get("place_id"),
+                    "name": place_details.get("name", ""),
+                    "address": place_details.get("address", ""),
+                    "lat": place_details.get("lat", 0.0),
+                    "lng": place_details.get("lng", 0.0),
+                    "photoUrl": place_details.get("photo_url"),
+                    "rating": place_details.get("rating"),
+                })
+            else:
+                # Fallback if details fetch fails
+                results.append({
+                    "place_id": place_id,
+                    "name": pred.get("structured_formatting", {}).get("main_text", ""),
+                    "address": pred.get("description", ""),
+                    "lat": 0.0,
+                    "lng": 0.0,
+                    "photoUrl": None,
+                    "rating": None,
+                })
         
         logger.info(f"✅ Found {len(results)} autocomplete results for '{query}'")
         return results

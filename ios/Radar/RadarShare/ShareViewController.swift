@@ -125,6 +125,7 @@ class ShareViewController: UIViewController {
     private let checkmarkImageView = UIImageView()
     private let savedLabel = UILabel()
     private let searchTextField = UITextField()
+    private let selectedPlacesTableView = UITableView()
     private let addButton = UIButton(type: .system)
     
     // UI Elements - Search Mode
@@ -333,6 +334,16 @@ class ShareViewController: UIViewController {
         searchTextField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 44, height: 48))
         searchTextField.leftViewMode = .always
         
+        // Selected places table view (shows all selected places)
+        selectedPlacesTableView.backgroundColor = .white
+        selectedPlacesTableView.separatorStyle = .none
+        selectedPlacesTableView.delegate = self
+        selectedPlacesTableView.dataSource = self
+        selectedPlacesTableView.register(SelectedPlaceCell.self, forCellReuseIdentifier: "SelectedPlaceCell")
+        selectedPlacesTableView.isScrollEnabled = true
+        selectedPlacesTableView.translatesAutoresizingMaskIntoConstraints = false
+        successContainerView.addSubview(selectedPlacesTableView)
+        
         // Add button
         addButton.setTitle("add 1 place", for: .normal)
         addButton.setTitleColor(.white, for: .normal)
@@ -361,7 +372,7 @@ class ShareViewController: UIViewController {
             placeCardView.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 24),
             placeCardView.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
             placeCardView.trailingAnchor.constraint(equalTo: successContainerView.trailingAnchor, constant: -24),
-            placeCardView.heightAnchor.constraint(equalToConstant: 90),
+            placeCardView.heightAnchor.constraint(equalToConstant: 0), // Hidden, using table view instead
             
             placeImageView.leadingAnchor.constraint(equalTo: placeCardView.leadingAnchor),
             placeImageView.centerYAnchor.constraint(equalTo: placeCardView.centerYAnchor),
@@ -384,7 +395,12 @@ class ShareViewController: UIViewController {
             savedLabel.topAnchor.constraint(equalTo: placeAddressLabel.bottomAnchor, constant: 4),
             savedLabel.leadingAnchor.constraint(equalTo: placeImageView.trailingAnchor, constant: 12),
             
-            searchTextField.topAnchor.constraint(equalTo: placeCardView.bottomAnchor, constant: 24),
+            selectedPlacesTableView.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 24),
+            selectedPlacesTableView.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
+            selectedPlacesTableView.trailingAnchor.constraint(equalTo: successContainerView.trailingAnchor, constant: -24),
+            selectedPlacesTableView.heightAnchor.constraint(equalToConstant: 200), // Will be dynamic
+            
+            searchTextField.topAnchor.constraint(equalTo: selectedPlacesTableView.bottomAnchor, constant: 24),
             searchTextField.leadingAnchor.constraint(equalTo: successContainerView.leadingAnchor, constant: 24),
             searchTextField.trailingAnchor.constraint(equalTo: successContainerView.trailingAnchor, constant: -24),
             searchTextField.heightAnchor.constraint(equalToConstant: 48),
@@ -815,20 +831,19 @@ class ShareViewController: UIViewController {
     }
     
     @objc private func toggleMainPlaceSelection() {
-        // Toggle selection state
         isMainPlaceSelected.toggle()
         
-        // Update checkmark appearance
+        // Update checkmark icon
         if isMainPlaceSelected {
             checkmarkImageView.image = UIImage(systemName: "checkmark.circle.fill")
             checkmarkImageView.tintColor = .black
         } else {
             checkmarkImageView.image = UIImage(systemName: "circle")
-            checkmarkImageView.tintColor = .systemGray3
+            checkmarkImageView.tintColor = .systemGray4
         }
         
-        // Update button text
         updateAddButtonText()
+        selectedPlacesTableView.reloadData()
     }
     
     @objc private func addPlaces() {
@@ -957,25 +972,73 @@ extension ShareViewController: UITextFieldDelegate {
 // MARK: - UITableViewDelegate & DataSource
 extension ShareViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return searchResults.count
+        if tableView == searchResultsTableView {
+            return searchResults.count
+        } else if tableView == selectedPlacesTableView {
+            // Show main place + selected search results
+            var count = 0
+            if savedPlace != nil && isMainPlaceSelected {
+                count = 1
+            }
+            count += searchResults.filter { $0.isSelected }.count
+            return count
+        }
+        return 0
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "SearchResultCell", for: indexPath) as! SearchResultCell
-        let selectablePlace = searchResults[indexPath.row]
-        cell.configure(with: selectablePlace)
-        return cell
+        if tableView == searchResultsTableView {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "SearchResultCell", for: indexPath) as! SearchResultCell
+            let selectablePlace = searchResults[indexPath.row]
+            cell.configure(with: selectablePlace)
+            return cell
+        } else if tableView == selectedPlacesTableView {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "SelectedPlaceCell", for: indexPath) as! SelectedPlaceCell
+            
+            // First row is main place (if selected), rest are search results
+            if indexPath.row == 0 && savedPlace != nil && isMainPlaceSelected {
+                cell.configure(with: savedPlace!, isMainPlace: true, isSaved: allSavedPlaces.contains(where: { $0.place_id == savedPlace?.place_id }))
+            } else {
+                let selectedResults = searchResults.filter { $0.isSelected }
+                let adjustedIndex = (savedPlace != nil && isMainPlaceSelected) ? indexPath.row - 1 : indexPath.row
+                if adjustedIndex < selectedResults.count {
+                    cell.configure(with: selectedResults[adjustedIndex])
+                }
+            }
+            return cell
+        }
+        return UITableViewCell()
     }
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         
-        // Toggle selection
-        searchResults[indexPath.row].isSelected.toggle()
-        tableView.reloadRows(at: [indexPath], with: .none)
-        
-        // Update button text
-        updateAddButtonText()
+        if tableView == searchResultsTableView {
+            // Toggle selection
+            searchResults[indexPath.row].isSelected.toggle()
+            
+            // Return to success screen (like Corner app)
+            searchInputField.text = ""
+            currentState = .success(savedPlace!)
+            updateAddButtonText()
+            selectedPlacesTableView.reloadData()
+        } else if tableView == selectedPlacesTableView {
+            // Tapping a selected place toggles its selection
+            if indexPath.row == 0 && savedPlace != nil && isMainPlaceSelected {
+                toggleMainPlaceSelection()
+            } else {
+                let selectedResults = searchResults.filter { $0.isSelected }
+                let adjustedIndex = (savedPlace != nil && isMainPlaceSelected) ? indexPath.row - 1 : indexPath.row
+                if adjustedIndex < selectedResults.count {
+                    // Find original index in searchResults
+                    if let originalIndex = searchResults.firstIndex(where: { $0.googlePlace.place_id == selectedResults[adjustedIndex].googlePlace.place_id }) {
+                        searchResults[originalIndex].isSelected = false
+                        selectedPlacesTableView.reloadData()
+                        updateAddButtonText()
+                    }
+                }
+            }
+        }
     }
     
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {

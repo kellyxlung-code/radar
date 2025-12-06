@@ -125,6 +125,7 @@ class ShareViewController: UIViewController {
     private let checkmarkImageView = UIImageView()
     private let savedLabel = UILabel()
     private let searchTextField = UITextField()
+    private let selectedPlacesTableView = UITableView()
     private let addButton = UIButton(type: .system)
     
     // UI Elements - Search Mode
@@ -972,9 +973,10 @@ extension ShareViewController: UITableViewDelegate, UITableViewDataSource {
         
         // Toggle selection
         searchResults[indexPath.row].isSelected.toggle()
-        tableView.reloadRows(at: [indexPath], with: .none)
         
-        // Update button text
+        // Return to success screen (like Corner app)
+        searchInputField.text = ""
+        currentState = .success(savedPlace!)
         updateAddButtonText()
     }
     

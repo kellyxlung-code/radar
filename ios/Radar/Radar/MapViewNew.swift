@@ -112,10 +112,17 @@ struct MapViewNew: View {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.gray)
 
-                        TextField("Search for places...", text: $searchText)
-                            .font(.system(size: 16))
-                            .foregroundColor(.black)  // ✅ BLACK TEXT
-                            .accentColor(.black)  // Cursor color
+                        ZStack(alignment: .leading) {
+                            if searchText.isEmpty {
+                                Text("Search for places...")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.gray)
+                            }
+                            TextField("", text: $searchText)
+                                .font(.system(size: 16))
+                                .foregroundColor(.black)  // ✅ BLACK TEXT
+                                .accentColor(.black)  // Cursor color
+                        }
                             .onChange(of: searchText) { newValue in
                                 if newValue.count > 2 {
                                     searchGooglePlaces(query: newValue)

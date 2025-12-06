@@ -531,18 +531,78 @@ struct PlaceholderSquareLarge: View {
 // MARK: - Import Sheet
 struct ImportOptionsSheet: View {
     @Environment(\.dismiss) var dismiss
+    @State private var linkText = ""
+    
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                Text("Import from")
-                    .font(.title2.bold())
+        VStack(spacing: 24) {
+            // Drag handle
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.gray.opacity(0.3))
+                .frame(width: 40, height: 5)
+                .padding(.top, 8)
+            
+            // Title
+            Text("import link")
+                .font(.title2.bold())
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+            
+            // Text input + Paste button
+            HStack(spacing: 12) {
+                TextField("paste your link here", text: $linkText)
+                    .textFieldStyle(.plain)
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            .background(Color.white)
+                    )
                     .foregroundColor(.black)
-                Button("Instagram") { dismiss() }.buttonStyle(.borderedProminent)
-                Button("RED") { dismiss() }.buttonStyle(.borderedProminent)
-                Button("Cancel") { dismiss() }.buttonStyle(.bordered)
+                
+                Button(action: {
+                    if let clipboardString = UIPasteboard.general.string {
+                        linkText = clipboardString
+                    }
+                }) {
+                    Image(systemName: "doc.on.clipboard")
+                        .font(.system(size: 24))
+                        .foregroundColor(.black)
+                        .frame(width: 50, height: 50)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                .background(Color.white)
+                        )
+                }
             }
-            .padding()
-            .background(Color.white)
+            .padding(.horizontal)
+            
+            // Upload button
+            Button(action: {
+                // TODO: Call backend to import link
+                print("📤 Uploading link: \(linkText)")
+                dismiss()
+            }) {
+                Text("upload")
+                    .font(.headline)
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.black, lineWidth: 1)
+                            .background(Color.white)
+                    )
+            }
+            .padding(.horizontal)
+            .disabled(linkText.isEmpty)
+            .opacity(linkText.isEmpty ? 0.5 : 1.0)
+            
+            Spacer()
         }
+        .background(Color.white)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.hidden)
     }
 }

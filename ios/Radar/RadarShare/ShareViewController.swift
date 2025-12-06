@@ -338,7 +338,7 @@ class ShareViewController: UIViewController {
         addButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
         addButton.backgroundColor = .black
         addButton.layer.cornerRadius = 28
-        addButton.addTarget(self, action: #selector(closeExtension), for: .touchUpInside)
+        addButton.addTarget(self, action: #selector(addPlaces), for: .touchUpInside)
         addButton.translatesAutoresizingMaskIntoConstraints = false
         successContainerView.addSubview(addButton)
         
@@ -816,6 +816,91 @@ class ShareViewController: UIViewController {
     // MARK: - Actions
     @objc private func closeExtension() {
         extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+    }
+    
+    @objc private func addPlaces() {
+        // Get all selected unsaved places
+        let selectedUnsavedResults = searchResults.filter { $0.isSelected && !$0.isSavedOnRadar }
+        
+        if selectedUnsavedResults.isEmpty {
+            // No new places to add, just close
+            closeExtension()
+            return
+        }
+        
+        // Show loading state
+        addButton.isEnabled = false
+        addButton.setTitle("saving...", for: .normal)
+        addButton.alpha = 0.6
+        
+        // Save all places
+        savePlaces(selectedUnsavedResults.map { $0.googlePlace }) { [weak self] success in
+            DispatchQueue.main.async {
+                if success {
+                    self?.closeExtension()
+                } else {
+                    // Re-enable button on error
+                    self?.addButton.isEnabled = true
+                    self?.addButton.setTitle("add \(selectedUnsavedResults.count) place\(selectedUnsavedResults.count == 1 ? "" : "s")", for: .normal)
+                    self?.addButton.alpha = 1.0
+                    
+                    // Show error alert
+                    let alert = UIAlertController(
+                        title: "Error",
+                        message: "Failed to save some places. Please try again.",
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self?.present(alert, animated: true)
+                }
+            }
+        }
+    }
+    
+    private func savePlaces(_ places: [GooglePlaceResult], completion: @escaping (Bool) -> Void) {
+        guard let token = ShareKeychainHelper.readAccessToken() else {
+            completion(false)
+            return
+        }
+        
+        let dispatchGroup = DispatchGroup()
+        var allSucceeded = true
+        
+        for place in places {
+            dispatchGroup.enter()
+            
+            guard let url = URL(string: "\(ShareAPIConfig.baseURL)/add-place-by-id") else {
+                allSucceeded = false
+                dispatchGroup.leave()
+                continue
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            
+            let payload: [String: Any] = ["place_id": place.place_id]
+            request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+            
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    print("Error saving place: \(error)")
+                    allSucceeded = false
+                }
+                
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                    print("HTTP error: \(httpResponse.statusCode)")
+                    allSucceeded = false
+                }
+                
+                dispatchGroup.leave()
+            }.resume()
+        }
+        
+        dispatchGroup.notify(queue: .main) {
+            completion(allSucceeded)
+        }
     }
     
     @objc private func closeSearch() {

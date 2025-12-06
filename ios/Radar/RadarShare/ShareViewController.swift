@@ -1152,7 +1152,12 @@ class SearchResultCell: UITableViewCell {
             checkmarkIcon.isHidden = true
         }
         
+        // Reset image
+        placeImageView.image = nil
+        placeImageView.backgroundColor = .systemGray6
+        
         // Load image
+        print("🖼️ Photo URL for \(result.name): \(result.photoUrl ?? "nil")")
         if let photoURLString = result.photoUrl, let photoURL = URL(string: photoURLString) {
             URLSession.shared.dataTask(with: photoURL) { [weak self] data, _, _ in
                 guard let data = data, let image = UIImage(data: data) else { return }

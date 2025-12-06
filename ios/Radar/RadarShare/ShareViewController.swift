@@ -769,8 +769,9 @@ class ShareViewController: UIViewController {
                 placeImageView.backgroundColor = .systemGray6
             }
             
-            // Update button text
+            // Update button text and reload table
             updateAddButtonText()
+            selectedPlacesTableView.reloadData()
             
             // Animate in from bottom
             successContainerView.transform = CGAffineTransform(translationX: 0, y: 400)

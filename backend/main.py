@@ -647,7 +647,8 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 async def chat(
     request: ChatRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     AI chat endpoint for place recommendations and questions.
@@ -656,6 +657,30 @@ async def chat(
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # Fetch user's pinned places for personalization
+        user_places = await db.execute(
+            select(Place).where(Place.user_id == current_user.id)
+        )
+        pinned_places = user_places.scalars().all()
+        
+        # Build user preferences context
+        user_context = ""
+        if pinned_places:
+            place_list = []
+            for p in pinned_places[:20]:  # Limit to 20 most recent
+                place_list.append(f"- {p.name} ({p.address})")
+            user_context = (
+                "\n\nUSER'S SAVED PLACES (use this to understand their preferences):\n"
+                + "\n".join(place_list) +
+                "\n\nPERSONALIZATION INSTRUCTIONS:\n"
+                "- Look at the user's saved places to understand their vibe and preferences\n"
+                "- When they ask for recommendations, suggest places from their saved list if relevant\n"
+                "- If you recommend a place they already saved, mention it like 'oh you already have this one saved!'\n"
+                "- Learn from their saved spots - if they have lots of cafes in Sheung Wan, they probably like that area/vibe\n"
+                "- Be personal and reference their taste when making suggestions\n"
+                "- Keep it casual and Gen Z - no formal language"
+            )
         
         # Build messages for OpenAI
         messages = [
@@ -675,7 +700,7 @@ async def chat(
                     "- If a user asks for Central, recommend Central places, not Tsim Sha Tsui.\n"
                     "\nIf asked about places, provide specific recommendations with exact district names. "
                     "Keep responses under 150 words."
-                )
+                ) + user_context
             }
         ]
         
@@ -688,7 +713,7 @@ async def chat(
         
         # Call OpenAI
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4.1-mini",
             messages=messages,
             temperature=0.7,
             max_tokens=200

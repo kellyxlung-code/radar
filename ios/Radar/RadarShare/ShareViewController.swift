@@ -256,9 +256,10 @@ class ShareViewController: UIViewController {
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         successContainerView.addSubview(closeButton)
         
-        // Place card
+        // Place card (HIDDEN - using table view instead)
         placeCardView.backgroundColor = .white
         placeCardView.translatesAutoresizingMaskIntoConstraints = false
+        placeCardView.isHidden = true  // Hide old single place card
         successContainerView.addSubview(placeCardView)
         
         // Place image (Google photo)

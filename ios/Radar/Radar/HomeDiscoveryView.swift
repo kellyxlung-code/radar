@@ -376,7 +376,7 @@ struct HomeDiscoveryView: View {
     }
     
     func loadTrending() {
-        guard let token = KeychainHelper.shared.getToken() else {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
             print("⚠️ No token for trending")
             return
         }

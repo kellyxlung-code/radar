@@ -53,7 +53,7 @@ struct Place: Identifiable, Codable {
         case id, name, lat, lng, district, category, address, photo_url, place_id
         case opening_hours, is_open_now, rating, user_ratings_total, price_level
         case source_url, source_type, caption, author, post_image_url, post_video_url
-        case is_pinned, notes, confidence, extraction_method, source, tags
+        case is_pinned, is_visited, notes, confidence, extraction_method, source, tags
         case category_emoji = "emoji"  // Backend sends "emoji", we use "category_emoji"
     }
 }

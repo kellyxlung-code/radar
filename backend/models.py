@@ -148,3 +148,41 @@ def get_category_from_tags(tags: list) -> str:
     
     # Default to eat (most common)
     return "eat"
+
+
+class Event(Base):
+    """Event model - happenings in Hong Kong"""
+    __tablename__ = "events"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Basic info
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    photo_url = Column(String)
+    
+    # Location
+    location = Column(String)
+    district = Column(String, index=True)
+    lat = Column(Float)
+    lng = Column(Float)
+    
+    # Dates
+    start_date = Column(DateTime, nullable=False, index=True)
+    end_date = Column(DateTime, nullable=False, index=True)
+    
+    # Category
+    category = Column(String, index=True)  # art, music, food, nightlife, culture, market
+    
+    # External link
+    url = Column(String)
+    
+    # Status
+    is_active = Column(Boolean, default=True, index=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<Event {self.name}>"

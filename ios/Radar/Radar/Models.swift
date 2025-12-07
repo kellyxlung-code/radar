@@ -140,3 +140,29 @@ struct TrendingPlace: Identifiable, Codable {
         emoji ?? "📍"
     }
 }
+
+
+// MARK: - Google Place Result Model (for search/chat)
+struct GooglePlaceResult: Identifiable, Codable {
+    let id: String
+    let name: String
+    let address: String
+    let lat: Double
+    let lng: Double
+    let rating: Double?
+    let photoUrl: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case id = "place_id"
+        case name
+        case address
+        case lat
+        case lng
+        case rating
+        case photoUrl
+    }
+}
+
+struct GoogleSearchResponse: Codable {
+    let results: [GooglePlaceResult]
+}

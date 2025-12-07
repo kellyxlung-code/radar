@@ -341,31 +341,6 @@ struct CategoryFilterChip: View {
     }
 }
 
-// MARK: - Google Search Models
-struct GoogleSearchResponse: Codable {
-    let results: [GooglePlaceResult]
-}
-
-struct GooglePlaceResult: Identifiable, Codable {
-    let id: String
-    let name: String
-    let address: String
-    let lat: Double
-    let lng: Double
-    let rating: Double?
-    let photoUrl: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case id = "place_id"
-        case name
-        case address
-        case lat
-        case lng
-        case rating
-        case photoUrl = "photo_url"
-    }
-}
-
 // MARK: - Place Detail Sheet
 struct PlaceDetailSheet: View {
     let place: Place

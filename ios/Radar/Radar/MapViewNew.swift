@@ -203,10 +203,10 @@ struct MapViewNew: View {
             
             // Search result detail bottom sheet
             if showSearchResultDetail, let result = selectedSearchResult {
-                SearchResultBottomSheet(
-                    result: result,
+                PlaceDetailSheet(
+                    place: convertToPlace(result),
                     isPresented: $showSearchResultDetail,
-                    places: places
+                    onDelete: loadPlaces
                 )
             }
         }
@@ -255,6 +255,43 @@ struct MapViewNew: View {
         )
         categories = catDict.map { Category(name: $0.key, emoji: $0.value) }
             .sorted { $0.name < $1.name }
+    }
+    
+    // Convert GooglePlaceResult to Place for consistent detail sheet
+    private func convertToPlace(_ result: GooglePlaceResult) -> Place {
+        // Check if this place is already pinned
+        let isPinned = places.contains { $0.place_id == result.id }
+        
+        return Place(
+            id: 0, // Temporary ID for unsaved places
+            name: result.name,
+            lat: result.lat,
+            lng: result.lng,
+            district: nil,
+            category: nil,
+            category_emoji: "📍",
+            address: result.address,
+            photo_url: result.photoUrl,
+            place_id: result.id,
+            opening_hours: nil, // Will be fetched when saving
+            is_open_now: nil,
+            rating: result.rating,
+            user_ratings_total: nil,
+            price_level: nil,
+            source_url: nil,
+            source_type: nil,
+            caption: nil,
+            author: nil,
+            post_image_url: nil,
+            post_video_url: nil,
+            is_pinned: isPinned,
+            is_visited: false,
+            notes: nil,
+            confidence: nil,
+            extraction_method: "search",
+            tags: nil,
+            source: nil
+        )
     }
 
     private func searchGooglePlaces(query: String) {
@@ -641,152 +678,4 @@ struct PlaceDetailSheet: View {
     }
 }
 
-// MARK: - Search Result Bottom Sheet
-struct SearchResultBottomSheet: View {
-    let result: GooglePlaceResult
-    @Binding var isPresented: Bool
-    let places: [Place]
-    
-    // Check if this place is already pinned
-    private var isPinned: Bool {
-        places.contains { $0.place_id == result.id }
-    }
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            
-            VStack(alignment: .leading, spacing: 16) {
-                // Header with close button
-                HStack {
-                    Text(result.name)
-                        .font(.title2.bold())
-                        .foregroundColor(.black)
-                    
-                    Spacer()
-                    
-                    Button(action: { isPresented = false }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(.gray)
-                    }
-                }
-                
-                // Photo (if available)
-                if let photoUrl = result.photoUrl, let url = URL(string: photoUrl) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(height: 200)
-                                .clipped()
-                                .cornerRadius(12)
-                        case .failure(_):
-                            placeholderImage
-                        case .empty:
-                            placeholderImage
-                        @unknown default:
-                            placeholderImage
-                        }
-                    }
-                }
-                
-                // Rating
-                if let rating = result.rating {
-                    HStack(spacing: 4) {
-                        ForEach(0..<5) { index in
-                            Image(systemName: index < Int(rating.rounded()) ? "star.fill" : "star")
-                                .foregroundColor(.orange)
-                                .font(.system(size: 14))
-                        }
-                        Text(String(format: "%.1f", rating))
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.black)
-                    }
-                }
-                
-                // Address
-                HStack(spacing: 8) {
-                    Image(systemName: "mappin.circle.fill")
-                        .foregroundColor(.orange)
-                        .font(.system(size: 18))
-                    Text(result.address)
-                        .font(.body)
-                        .foregroundColor(.gray)
-                }
-                
-                // Action buttons
-                HStack(spacing: 12) {
-                    // Directions button
-                    Button(action: {
-                        openDirections()
-                    }) {
-                        HStack {
-                            Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
-                                .font(.system(size: 20))
-                            Text("Directions")
-                                .font(.system(size: 16, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.blue)
-                        .cornerRadius(12)
-                    }
-                    
-                    // Pin status button
-                    Button(action: {
-                        // TODO: Add pin/unpin functionality
-                    }) {
-                        HStack {
-                            Image(systemName: isPinned ? "checkmark.circle.fill" : "plus.circle.fill")
-                                .font(.system(size: 20))
-                            Text(isPinned ? "Pinned" : "Pin")
-                                .font(.system(size: 16, weight: .semibold))
-                        }
-                        .foregroundColor(isPinned ? .white : .orange)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(isPinned ? Color.green : Color.orange.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                }
-            }
-            .padding(20)
-            .background(Color.white)
-            .cornerRadius(20, corners: [.topLeft, .topRight])
-            .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: -5)
-        }
-        .background(
-            Color.black.opacity(0.3)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    isPresented = false
-                }
-        )
-    }
-    
-    private var placeholderImage: some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.2))
-            .frame(height: 200)
-            .cornerRadius(12)
-            .overlay(
-                Image(systemName: "photo")
-                    .font(.system(size: 40))
-                    .foregroundColor(.gray)
-            )
-    }
-    
-    private func openDirections() {
-        let coordinate = "\(result.lat),\(result.lng)"
-        let placeName = result.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        
-        // Open Apple Maps with directions
-        if let url = URL(string: "http://maps.apple.com/?daddr=\(coordinate)&q=\(placeName)") {
-            UIApplication.shared.open(url)
-        }
-    }
-}
+

@@ -54,6 +54,10 @@ struct MapViewNew: View {
                 }
             }
             .ignoresSafeArea()
+            .onTapGesture {
+                // Dismiss keyboard when tapping on map
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
 
             // Top controls
             VStack {
@@ -597,8 +601,60 @@ struct PlaceDetailSheet: View {
     
     func toggleWantToTry() {
         // "want to try" = pinned on map
-        // Toggling off = unpin (delete place)
-        deletePlace()
+        // If place is not saved yet (id == 0) or not pinned → save it
+        // If place is already pinned → delete it (unpin)
+        if place.id == 0 || place.is_pinned == false {
+            savePlace()
+        } else {
+            deletePlace()
+        }
+    }
+    
+    func savePlace() {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
+            print("❌ No auth token")
+            return
+        }
+        
+        isUpdating = true
+        
+        guard let url = URL(string: "\(Config.apiBaseURL)/places") else {
+            isUpdating = false
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let payload: [String: Any?] = [
+            "name": place.name,
+            "lat": place.lat,
+            "lng": place.lng,
+            "address": place.address,
+            "place_id": place.place_id,
+            "photo_url": place.photo_url,
+            "rating": place.rating,
+            "extraction_method": "search"
+        ]
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload, options: .fragmentsAllowed)
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                isUpdating = false
+                
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 201 {
+                    print("✅ Place saved (pinned)")
+                    // Close the sheet and refresh map
+                    isPresented = false
+                    onDelete?() // Reuse onDelete callback to refresh map
+                } else {
+                    print("❌ Failed to save place")
+                }
+            }
+        }.resume()
     }
     
     func toggleVisited() {

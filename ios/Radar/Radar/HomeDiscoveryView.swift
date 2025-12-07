@@ -817,10 +817,11 @@ struct ImportOptionsSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var linkText = ""
     @State private var isLoading = false
-    @State private var extractedPlaces: [ImportGooglePlaceResult] = []
-    @State private var selectedPlaceIds: Set<String> = []
+    @State private var extractedPlace: Place?
+    @State private var showPlaceDetail = false
+    @State private var showErrorScreen = false
     @State private var errorMessage: String?
-    @State private var showPlacesList = false
+    var onPlaceSaved: (() -> Void)? = nil
     
     var body: some View {
         VStack(spacing: 24) {
@@ -839,15 +840,22 @@ struct ImportOptionsSheet: View {
             
             // Text input + Paste button
             HStack(spacing: 12) {
-                TextField("paste your link here", text: $linkText)
-                    .textFieldStyle(.plain)
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                            .background(Color.white)
-                    )
-                    .foregroundColor(.black)
+                ZStack(alignment: .leading) {
+                    if linkText.isEmpty {
+                        Text("paste your link here")
+                            .foregroundColor(.black.opacity(0.5))
+                            .padding(.leading, 16)
+                    }
+                    TextField("", text: $linkText)
+                        .textFieldStyle(.plain)
+                        .padding()
+                        .foregroundColor(.black)
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .background(Color.white)
+                )
                 
                 Button(action: {
                     if let clipboardString = UIPasteboard.general.string {
@@ -893,83 +901,49 @@ struct ImportOptionsSheet: View {
             .disabled(linkText.isEmpty || isLoading)
             .opacity(linkText.isEmpty || isLoading ? 0.5 : 1.0)
             
-            // Error message
-            if let error = errorMessage {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .padding(.horizontal)
-            }
-            
-            // Places list (after extraction)
-            if showPlacesList {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("found \(extractedPlaces.count) place(s)")
-                        .font(.headline)
-                        .foregroundColor(.black)
-                        .padding(.horizontal)
-                    
-                    ScrollView {
-                        VStack(spacing: 12) {
-                            ForEach(extractedPlaces, id: \.place_id) { place in
-                                PlaceSelectionRow(
-                                    place: place,
-                                    isSelected: selectedPlaceIds.contains(place.place_id),
-                                    onToggle: {
-                                        if selectedPlaceIds.contains(place.place_id) {
-                                            selectedPlaceIds.remove(place.place_id)
-                                        } else {
-                                            selectedPlaceIds.insert(place.place_id)
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                    .frame(maxHeight: 300)
-                    
-                    // Save selected button
-                    Button(action: {
-                        saveSelectedPlaces()
-                    }) {
-                        Text("add \(selectedPlaceIds.count) place(s)")
-                            .font(.headline)
-                            .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.black, lineWidth: 1)
-                                    .background(Color.white)
-                            )
-                    }
-                    .padding(.horizontal)
-                    .disabled(selectedPlaceIds.isEmpty)
-                    .opacity(selectedPlaceIds.isEmpty ? 0.5 : 1.0)
-                }
-            }
+
             
             Spacer()
         }
         .background(Color.white)
         .presentationDetents([.medium])
         .presentationDragIndicator(.hidden)
+        .overlay {
+            // Success: Show place detail sheet
+            if showPlaceDetail, let place = extractedPlace {
+                PlaceDetailSheet(
+                    place: place,
+                    isPresented: $showPlaceDetail,
+                    onDelete: {
+                        onPlaceSaved?()
+                        dismiss()
+                    }
+                )
+            }
+            
+            // Error: Show error screen with manual search
+            if showErrorScreen {
+                ErrorScreenWithSearch(
+                    isPresented: $showErrorScreen,
+                    onPlaceSaved: {
+                        onPlaceSaved?()
+                        dismiss()
+                    }
+                )
+            }
+        }
     }
     
     // MARK: - API Functions
     func extractPlaces() {
         isLoading = true
-        errorMessage = nil
         
-        guard let url = URL(string: "\(Config.apiBaseURL)/extract-places") else {
-            errorMessage = "Invalid API URL"
+        guard let url = URL(string: "\(Config.apiBaseURL)/import") else {
             isLoading = false
             return
         }
         
         guard let token = KeychainHelper.shared.readAccessToken() else {
-            errorMessage = "Please log in first"
             isLoading = false
             return
         }
@@ -986,145 +960,193 @@ struct ImportOptionsSheet: View {
             DispatchQueue.main.async {
                 isLoading = false
                 
-                if let error = error {
-                    errorMessage = "Network error: \(error.localizedDescription)"
-                    return
-                }
-                
-                guard let data = data else {
-                    errorMessage = "No response from server"
-                    return
-                }
+                guard let data = data else { return }
                 
                 // Check HTTP status
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
-                    if let errorResponse = try? JSONDecoder().decode(ImportErrorResponse.self, from: data) {
-                        errorMessage = errorResponse.detail
+                if let httpResponse = response as? HTTPURLResponse {
+                    if httpResponse.statusCode == 200 {
+                        // Success: Parse place and show detail sheet
+                        if let place = try? JSONDecoder().decode(Place.self, from: data) {
+                            extractedPlace = place
+                            showPlaceDetail = true
+                        }
                     } else {
-                        errorMessage = "Server error (\(httpResponse.statusCode))"
+                        // Error: Show error screen with manual search
+                        showErrorScreen = true
                     }
-                    return
                 }
+            }
+        }.resume()
+    }
+}
+
+// MARK: - Error Screen With Search
+struct ErrorScreenWithSearch: View {
+    @Binding var isPresented: Bool
+    var onPlaceSaved: (() -> Void)? = nil
+    @State private var searchText = ""
+    @State private var searchResults: [GooglePlaceResult] = []
+    @State private var isSearching = false
+    @State private var selectedPlace: Place?
+    @State private var showPlaceDetail = false
+    
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                Spacer()
                 
-                // Parse success response
-                do {
-                    let response = try JSONDecoder().decode(ExtractPlacesResponse.self, from: data)
-                    extractedPlaces = response.places
-                    // Auto-select places that aren't already saved
-                    selectedPlaceIds = Set(extractedPlaces.filter { !$0.is_saved }.map { $0.place_id })
-                    showPlacesList = true
-                } catch {
-                    errorMessage = "Failed to parse response: \(error.localizedDescription)"
+                VStack(spacing: 24) {
+                    // Close button
+                    HStack {
+                        Spacer()
+                        Button(action: { isPresented = false }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 28))
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    
+                    // Error icon and message
+                    Text("👀")
+                        .font(.system(size: 60))
+                    
+                    Text("we couldn't find the place")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.black)
+                    
+                    // Search field
+                    TextField("search for it yourself", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 16))
+                        .padding()
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(24)
+                        .padding(.horizontal, 20)
+                        .onChange(of: searchText) { newValue in
+                            if newValue.count > 2 {
+                                searchPlaces(query: newValue)
+                            }
+                        }
+                    
+                    // Search results
+                    if !searchResults.isEmpty {
+                        ScrollView {
+                            VStack(spacing: 12) {
+                                ForEach(searchResults) { result in
+                                    Button(action: {
+                                        selectedPlace = convertToPlace(result)
+                                        showPlaceDetail = true
+                                    }) {
+                                        HStack {
+                                            VStack(alignment: .leading) {
+                                                Text(result.name)
+                                                    .font(.headline)
+                                                    .foregroundColor(.black)
+                                                Text(result.address)
+                                                    .font(.caption)
+                                                    .foregroundColor(.gray)
+                                            }
+                                            Spacer()
+                                        }
+                                        .padding()
+                                        .background(Color.gray.opacity(0.05))
+                                        .cornerRadius(12)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                        .frame(maxHeight: 300)
+                    }
+                    
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+                .background(Color.white)
+                .cornerRadius(24, corners: [.topLeft, .topRight])
+            }
+        }
+        .overlay {
+            if showPlaceDetail, let place = selectedPlace {
+                PlaceDetailSheet(
+                    place: place,
+                    isPresented: $showPlaceDetail,
+                    onDelete: {
+                        onPlaceSaved?()
+                        isPresented = false
+                    }
+                )
+            }
+        }
+    }
+    
+    func searchPlaces(query: String) {
+        isSearching = true
+        
+        guard let url = URL(string: "\(Config.apiBaseURL)/search-places?query=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") else {
+            isSearching = false
+            return
+        }
+        
+        guard let token = KeychainHelper.shared.readAccessToken() else {
+            isSearching = false
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                isSearching = false
+                
+                guard let data = data else { return }
+                
+                if let searchResponse = try? JSONDecoder().decode(GoogleSearchResponse.self, from: data) {
+                    searchResults = searchResponse.results
                 }
             }
         }.resume()
     }
     
-    func saveSelectedPlaces() {
-        guard let token = KeychainHelper.shared.readAccessToken() else {
-            errorMessage = "Please log in first"
-            return
-        }
-        
-        isLoading = true
-        let group = DispatchGroup()
-        var savedCount = 0
-        
-        for placeId in selectedPlaceIds {
-            group.enter()
-            
-            guard let url = URL(string: "\(Config.apiBaseURL)/add-place-by-id") else {
-                group.leave()
-                continue
-            }
-            
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            
-            let payload: [String: Any] = ["place_id": placeId]
-            request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-            
-            URLSession.shared.dataTask(with: request) { _, response, _ in
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                    savedCount += 1
-                }
-                group.leave()
-            }.resume()
-        }
-        
-        group.notify(queue: .main) {
-            isLoading = false
-            print("✅ Saved \(savedCount) place(s)")
-            dismiss()
-        }
-    }
-}
-
-// MARK: - Supporting Models for Import
-struct ImportGooglePlaceResult: Codable, Identifiable {
-    let place_id: String
-    let name: String
-    let address: String
-    let lat: Double
-    let lng: Double
-    let rating: Double?
-    let photoUrl: String?
-    let is_saved: Bool
-    
-    var id: String { place_id }
-}
-
-struct ExtractPlacesResponse: Codable {
-    let places: [ImportGooglePlaceResult]
-}
-
-struct ImportErrorResponse: Codable {
-    let detail: String
-}
-
-// MARK: - Place Selection Row
-struct PlaceSelectionRow: View {
-    let place: ImportGooglePlaceResult
-    let isSelected: Bool
-    let onToggle: () -> Void
-    
-    var body: some View {
-        Button(action: onToggle) {
-            HStack(spacing: 12) {
-                // Checkbox
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 24))
-                    .foregroundColor(isSelected ? .black : .gray)
-                
-                // Place info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(place.name)
-                        .font(.headline)
-                        .foregroundColor(.black)
-                    
-                    Text(place.address)
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .lineLimit(1)
-                    
-                    if place.is_saved {
-                        Text("saved by you")
-                            .font(.caption2)
-                            .foregroundColor(.gray)
-                    }
-                }
-                
-                Spacer()
-            }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Color.black : Color.gray.opacity(0.3), lineWidth: 1)
-                    .background(Color.white)
-            )
-        }
+    func convertToPlace(_ result: GooglePlaceResult) -> Place {
+        return Place(
+            id: 0,
+            name: result.name,
+            lat: result.lat,
+            lng: result.lng,
+            district: nil,
+            category: nil,
+            category_emoji: "📍",
+            address: result.address,
+            photo_url: result.photoUrl,
+            place_id: result.id,
+            opening_hours: nil,
+            is_open_now: nil,
+            rating: result.rating,
+            user_ratings_total: nil,
+            price_level: nil,
+            source_url: nil,
+            source_type: nil,
+            caption: nil,
+            author: nil,
+            post_image_url: nil,
+            post_video_url: nil,
+            is_pinned: false,
+            is_visited: false,
+            notes: nil,
+            confidence: nil,
+            extraction_method: "search",
+            tags: nil,
+            source: nil
+        )
     }
 }
 
@@ -1493,5 +1515,26 @@ struct FriendMatchCard: View {
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+    }
+}
+
+// MARK: - View Extensions
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
     }
 }

@@ -159,7 +159,7 @@ struct GooglePlaceResult: Identifiable, Codable {
         case lat
         case lng
         case rating
-        case photoUrl
+        case photoUrl = "photo_url"
     }
 }
 

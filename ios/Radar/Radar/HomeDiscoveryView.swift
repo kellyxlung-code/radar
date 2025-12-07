@@ -1,23 +1,9 @@
 import SwiftUI
 
-// MARK: - Event Model
-struct Event: Codable, Identifiable {
-    let id: Int
-    let name: String
-    let description: String?
-    let photo_url: String?
-    let location: String?
-    let district: String?
-    let start_date: String
-    let end_date: String
-    let category: String?
-    let url: String?
-    let time_description: String
-}
-
 struct HomeDiscoveryView: View {
     @State private var allPlaces: [Place] = []
     @State private var events: [Event] = []
+    @State private var trendingPlaces: [TrendingPlace] = []
     @State private var isLoading = true
     @State private var showImportSheet = false
     @State private var userLocation: (lat: Double, lng: Double)? = nil
@@ -161,8 +147,27 @@ struct HomeDiscoveryView: View {
                                     }
                                 }
                             }
+                            
+                            // SECTION 2: Trending This Week
+                            if !trendingPlaces.isEmpty {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Text("Trending This Week 🔥")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal)
+                                    
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 16) {
+                                            ForEach(trendingPlaces) { place in
+                                                TrendingPlaceCard(place: place)
+                                            }
+                                        }
+                                        .padding(.horizontal)
+                                    }
+                                }
+                            }
 
-                            // SECTION 2: Picked for You
+                            // SECTION 3: Picked for You
                             if !pickedForYou.isEmpty {
                                 VStack(alignment: .leading, spacing: 16) {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -264,6 +269,7 @@ struct HomeDiscoveryView: View {
                 loadPlaces()
                 loadUserLocation()
                 loadEvents()
+                loadTrending()
             }
         }
     }
@@ -364,6 +370,46 @@ struct HomeDiscoveryView: View {
                 print("❌ Decode /events error:", error.localizedDescription)
                 if let jsonString = String(data: data, encoding: .utf8) {
                     print("📄 Events Response:", jsonString)
+                }
+            }
+        }.resume()
+    }
+    
+    func loadTrending() {
+        guard let token = KeychainHelper.shared.getToken() else {
+            print("⚠️ No token for trending")
+            return
+        }
+        
+        guard let url = URL(string: "\(Config.apiBaseURL)/trending") else {
+            print("⚠️ Invalid trending URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ /trending error:", error.localizedDescription)
+                return
+            }
+            
+            guard let data = data else {
+                print("⚠️ No trending data")
+                return
+            }
+            
+            do {
+                let decoded = try JSONDecoder().decode([TrendingPlace].self, from: data)
+                DispatchQueue.main.async {
+                    self.trendingPlaces = decoded
+                    print("✅ Loaded \(decoded.count) trending places")
+                }
+            } catch {
+                print("❌ Decode /trending error:", error.localizedDescription)
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("📄 Trending Response:", jsonString)
                 }
             }
         }.resume()
@@ -1025,6 +1071,91 @@ struct EventCard: View {
                         .font(.system(size: 14))
                         .foregroundColor(.gray)
                         .lineLimit(1)
+                }
+            }
+            .padding(12)
+        }
+        .frame(width: 280)
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+    }
+}
+
+// MARK: - Trending Place Card
+struct TrendingPlaceCard: View {
+    let place: TrendingPlace
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Place Photo
+            if let photoUrl = place.photo_url, let url = URL(string: photoUrl) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 280, height: 180)
+                            .overlay(ProgressView())
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 280, height: 180)
+                            .clipped()
+                    case .failure:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 280, height: 180)
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .foregroundColor(.gray)
+                            )
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            } else {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 280, height: 180)
+                    .overlay(
+                        Text(place.displayEmoji)
+                            .font(.system(size: 48))
+                    )
+            }
+            
+            // Place Info
+            VStack(alignment: .leading, spacing: 8) {
+                Text(place.name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.black)
+                    .lineLimit(2)
+                
+                if let district = place.district {
+                    Text(district)
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
+                
+                // Trending stats
+                HStack(spacing: 12) {
+                    HStack(spacing: 4) {
+                        Text("👥")
+                            .font(.system(size: 14))
+                        Text("\(place.total_saves) saves")
+                            .font(.system(size: 14))
+                            .foregroundColor(.gray)
+                    }
+                    
+                    HStack(spacing: 4) {
+                        Text("🔥")
+                            .font(.system(size: 14))
+                        Text("+\(place.recent_saves) this week")
+                            .font(.system(size: 14))
+                            .foregroundColor(.orange)
+                    }
                 }
             }
             .padding(12)

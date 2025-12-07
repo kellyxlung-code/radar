@@ -443,56 +443,52 @@ struct PlaceDetailSheet: View {
                     }
                     .padding(.horizontal, 20)
                     
-                    // Action buttons
-                    HStack(spacing: 12) {
+                    // All action buttons in one row
+                    HStack(spacing: 8) {
                         // Share button
                         Button(action: {
                             sharePlace()
                         }) {
                             Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 20))
+                                .font(.system(size: 18))
                                 .foregroundColor(.black)
-                                .frame(width: 50, height: 50)
+                                .frame(width: 44, height: 44)
                                 .background(Color.gray.opacity(0.1))
-                                .cornerRadius(25)
+                                .cornerRadius(22)
                         }
                         
                         // Directions button
                         Button(action: {
                             openDirections()
                         }) {
-                            HStack {
+                            HStack(spacing: 4) {
                                 Image(systemName: "location.fill")
-                                    .font(.system(size: 16))
+                                    .font(.system(size: 14))
                                 Text("directions")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.system(size: 14, weight: .semibold))
                             }
                             .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
                             .background(Color.gray.opacity(0.1))
-                            .cornerRadius(25)
+                            .cornerRadius(22)
                         }
-                    }
-                    .padding(.horizontal, 20)
-                    
-                    // Want to try + Visited buttons
-                    HStack(spacing: 12) {
+                        
                         // Want to try button (toggle)
                         Button(action: {
                             toggleWantToTry()
                         }) {
-                            HStack {
+                            HStack(spacing: 4) {
                                 Image(systemName: place.is_visited == false ? "star.fill" : "star")
-                                    .font(.system(size: 16))
+                                    .font(.system(size: 14))
                                 Text("want to try")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.system(size: 14, weight: .semibold))
                             }
                             .foregroundColor(place.is_visited == false ? .white : .black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
                             .background(place.is_visited == false ? Color.orange : Color.gray.opacity(0.1))
-                            .cornerRadius(25)
+                            .cornerRadius(22)
                         }
                         .disabled(isUpdating)
                         
@@ -500,17 +496,17 @@ struct PlaceDetailSheet: View {
                         Button(action: {
                             toggleVisited()
                         }) {
-                            HStack {
+                            HStack(spacing: 4) {
                                 Image(systemName: place.is_visited == true ? "checkmark.circle.fill" : "checkmark.circle")
-                                    .font(.system(size: 16))
+                                    .font(.system(size: 14))
                                 Text("visited")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.system(size: 14, weight: .semibold))
                             }
                             .foregroundColor(place.is_visited == true ? .white : .black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
                             .background(place.is_visited == true ? Color.green : Color.gray.opacity(0.1))
-                            .cornerRadius(25)
+                            .cornerRadius(22)
                         }
                         .disabled(isUpdating)
                     }

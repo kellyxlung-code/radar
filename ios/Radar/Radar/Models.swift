@@ -109,14 +109,14 @@ struct ImportCandidateResponse: Codable {
 struct Event: Identifiable, Codable {
     let id: Int
     let name: String
-    let description: String
-    let photo_url: String
-    let location: String
-    let district: String
+    let description: String?
+    let photo_url: String?
+    let location: String?
+    let district: String?
     let start_date: String
     let end_date: String
-    let category: String
-    let url: String
+    let category: String?
+    let url: String?
     let time_description: String
 }
 

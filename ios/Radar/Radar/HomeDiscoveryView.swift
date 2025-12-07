@@ -1,7 +1,23 @@
 import SwiftUI
 
+// MARK: - Event Model
+struct Event: Codable, Identifiable {
+    let id: Int
+    let name: String
+    let description: String?
+    let photo_url: String?
+    let location: String?
+    let district: String?
+    let start_date: String
+    let end_date: String
+    let category: String?
+    let url: String?
+    let time_description: String
+}
+
 struct HomeDiscoveryView: View {
     @State private var allPlaces: [Place] = []
+    @State private var events: [Event] = []
     @State private var isLoading = true
     @State private var showImportSheet = false
     @State private var userLocation: (lat: Double, lng: Double)? = nil
@@ -127,7 +143,26 @@ struct HomeDiscoveryView: View {
                                 .padding(.horizontal)
                             }
 
-                            // SECTION 1: Picked for You
+                            // SECTION 1: Happening Now in HK
+                            if !events.isEmpty {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Text("Happening Now in HK 🎪")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal)
+                                    
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 16) {
+                                            ForEach(events) { event in
+                                                EventCard(event: event)
+                                            }
+                                        }
+                                        .padding(.horizontal)
+                                    }
+                                }
+                            }
+
+                            // SECTION 2: Picked for You
                             if !pickedForYou.isEmpty {
                                 VStack(alignment: .leading, spacing: 16) {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -228,6 +263,7 @@ struct HomeDiscoveryView: View {
             if allPlaces.isEmpty {
                 loadPlaces()
                 loadUserLocation()
+                loadEvents()
             }
         }
     }
@@ -299,6 +335,38 @@ struct HomeDiscoveryView: View {
 
     func loadUserLocation() {
         userLocation = (lat: 22.2819, lng: 114.1579)
+    }
+    
+    func loadEvents() {
+        guard let url = URL(string: "\(Config.apiBaseURL)/events") else {
+            print("⚠️ Invalid events URL")
+            return
+        }
+        
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                print("❌ /events error:", error.localizedDescription)
+                return
+            }
+            
+            guard let data = data else {
+                print("⚠️ No events data")
+                return
+            }
+            
+            do {
+                let decoded = try JSONDecoder().decode([Event].self, from: data)
+                DispatchQueue.main.async {
+                    self.events = decoded
+                    print("✅ Loaded \(decoded.count) events")
+                }
+            } catch {
+                print("❌ Decode /events error:", error.localizedDescription)
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("📄 Events Response:", jsonString)
+                }
+            }
+        }.resume()
     }
 
     func calculateDistance(lat1: Double, lng1: Double, lat2: Double, lng2: Double) -> Double {
@@ -894,5 +962,76 @@ struct PlaceSelectionRow: View {
                     .background(Color.white)
             )
         }
+    }
+}
+
+
+// MARK: - Event Card
+struct EventCard: View {
+    let event: Event
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Event Photo
+            if let photoUrl = event.photo_url, let url = URL(string: photoUrl) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 280, height: 180)
+                            .overlay(ProgressView())
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 280, height: 180)
+                            .clipped()
+                    case .failure:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 280, height: 180)
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .foregroundColor(.gray)
+                            )
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            } else {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 280, height: 180)
+                    .overlay(
+                        Image(systemName: "calendar")
+                            .foregroundColor(.gray)
+                    )
+            }
+            
+            // Event Info
+            VStack(alignment: .leading, spacing: 8) {
+                Text(event.name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.black)
+                    .lineLimit(2)
+                
+                Text(event.time_description)
+                    .font(.system(size: 14))
+                    .foregroundColor(.gray)
+                
+                if let location = event.location {
+                    Text(location)
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
+            }
+            .padding(12)
+        }
+        .frame(width: 280)
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
     }
 }

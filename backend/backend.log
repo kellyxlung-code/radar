@@ -1,0 +1,12 @@
+nohup: ignoring input
+INFO:     Will watch for changes in these directories: ['/home/ubuntu/radar-ios/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [39762] using StatReload
+⚠️ DATABASE_URL not set. Using SQLite: ./radar.db
+⚠️ For production, add PostgreSQL in Railway!
+INFO:     Started server process [39764]
+INFO:     Waiting for application startup.
+2025-12-06 21:24:12,175 - main - INFO - 🚀 Starting Radar Backend...
+2025-12-06 21:24:12,179 - database - INFO - ✅ Database tables created/verified
+2025-12-06 21:24:12,179 - main - INFO - ⚠️ MVP MODE ENABLED - OTP bypass active (123456)
+INFO:     Application startup complete.

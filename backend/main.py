@@ -24,7 +24,7 @@ from database import init_db, get_db
 from models import User, Place, get_emoji_for_category, get_category_from_tags
 from auth import send_otp, verify_otp, get_current_user, MVP_MODE
 from google_places import enrich_place_data, extract_district_from_address
-from ai_extraction import process_instagram_url, extract_place_manual
+from ai_extraction import process_instagram_url, extract_place_manual, detect_category
 from google_places_autocomplete import autocomplete_search, get_place_details
 
 # Logging
@@ -218,9 +218,10 @@ async def import_url(
         )
     
     # Step 3: Merge data
-    # Determine category and emoji
+    # Determine category using AI
     tags = ai_data.get("tags", [])
-    category = ai_data.get("category") or get_category_from_tags(tags)
+    description = ai_data.get("source_caption", "") or google_data.get("address", "")
+    category = detect_category(google_data.get("name"), description)
     emoji = get_emoji_for_category(category)
     
     # Extract district from Google address if not from AI
@@ -669,9 +670,10 @@ async def add_place_by_id(
             detail="Could not find place details"
         )
     
-    # Determine category from types
+    # Determine category using AI
     types = google_data.get("types", [])
-    category = get_category_from_tags(types)
+    description = google_data.get("address", "")
+    category = detect_category(google_data.get("name"), description)
     emoji = get_emoji_for_category(category)
     
     # Extract district
@@ -817,6 +819,209 @@ async def chat(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not process chat request"
         )
+
+
+# ============================================================================
+# EVENTS & TRENDING ENDPOINTS
+# ============================================================================
+
+from models import Event
+from datetime import timedelta
+
+class EventResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    photo_url: Optional[str]
+    location: Optional[str]
+    district: Optional[str]
+    start_date: str
+    end_date: str
+    category: Optional[str]
+    url: Optional[str]
+    time_description: str
+
+@app.get("/events", response_model=List[EventResponse])
+async def get_events(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current and upcoming events in Hong Kong"""
+    from datetime import datetime
+    
+    result = await db.execute(
+        select(Event).where(
+            and_(
+                Event.end_date >= datetime.now(),
+                Event.is_active == True
+            )
+        ).order_by(Event.start_date.asc()).limit(20)
+    )
+    events = result.scalars().all()
+    
+    def format_time_description(start, end):
+        now = datetime.now()
+        
+        if start.date() == now.date():
+            return "Tonight"
+        elif start.date() == (now + timedelta(days=1)).date():
+            return "Tomorrow"
+        elif start.date() <= (now + timedelta(days=7)).date():
+            if start.weekday() >= 5:
+                return "This Weekend"
+            else:
+                return start.strftime("%A")
+        elif start.date() <= (now + timedelta(days=14)).date():
+            return "Next Week"
+        else:
+            return start.strftime("%b %d")
+    
+    return [
+        EventResponse(
+            id=e.id,
+            name=e.name,
+            description=e.description,
+            photo_url=e.photo_url,
+            location=e.location,
+            district=e.district,
+            start_date=e.start_date.isoformat(),
+            end_date=e.end_date.isoformat(),
+            category=e.category,
+            url=e.url,
+            time_description=format_time_description(e.start_date, e.end_date)
+        )
+        for e in events
+    ]
+
+
+class TrendingPlaceResponse(BaseModel):
+    id: int
+    name: str
+    district: Optional[str]
+    category: Optional[str]
+    emoji: str
+    photo_url: Optional[str]
+    lat: float
+    lng: float
+    rating: Optional[float]
+    saves_this_week: int
+    total_saves: int
+
+@app.get("/trending", response_model=List[TrendingPlaceResponse])
+async def get_trending_places(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get trending places based on save velocity"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, case
+    
+    # Get all places with save counts
+    week_ago = datetime.now() - timedelta(days=7)
+    
+    # Subquery to count saves per place
+    result = await db.execute(
+        select(
+            Place,
+            func.count(Place.id).label('total_saves')
+        ).where(
+            Place.created_at > week_ago
+        ).group_by(Place.id).order_by(
+            func.count(Place.id).desc()
+        ).limit(20)
+    )
+    
+    trending_data = result.all()
+    
+    return [
+        TrendingPlaceResponse(
+            id=place.id,
+            name=place.name,
+            district=place.district,
+            category=place.category,
+            emoji=place.emoji,
+            photo_url=place.photo_url,
+            lat=place.lat,
+            lng=place.lng,
+            rating=place.rating,
+            saves_this_week=count,
+            total_saves=count
+        )
+        for place, count in trending_data
+    ]
+
+
+class SupportLocalPlaceResponse(BaseModel):
+    id: int
+    name: str
+    district: Optional[str]
+    category: Optional[str]
+    emoji: str
+    photo_url: Optional[str]
+    lat: float
+    lng: float
+    rating: Optional[float]
+    established_year: Optional[int]
+    is_independent: bool
+
+@app.get("/support-local", response_model=List[SupportLocalPlaceResponse])
+async def get_support_local_places(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get independent/local businesses to support"""
+    # For now, return places with certain tags
+    # Later: add established_year and is_independent fields to Place model
+    
+    result = await db.execute(
+        select(Place).where(
+            Place.user_id == current_user.id
+        ).order_by(Place.created_at.desc()).limit(20)
+    )
+    places = result.scalars().all()
+    
+    # Filter for local/independent (check tags or name patterns)
+    local_places = [
+        p for p in places
+        if p.tags and any(
+            tag.lower() in ['local', 'independent', 'family-owned', 'heritage']
+            for tag in p.tags
+        )
+    ]
+    
+    return [
+        SupportLocalPlaceResponse(
+            id=p.id,
+            name=p.name,
+            district=p.district,
+            category=p.category,
+            emoji=p.emoji,
+            photo_url=p.photo_url,
+            lat=p.lat,
+            lng=p.lng,
+            rating=p.rating,
+            established_year=None,  # TODO: add to model
+            is_independent=True
+        )
+        for p in local_places[:20]
+    ]
+
+
+class FriendTasteMatchResponse(BaseModel):
+    friend_id: int
+    friend_name: str
+    friend_phone: str
+    match_percentage: int
+    shared_places_count: int
+
+@app.get("/friend-taste-match", response_model=List[FriendTasteMatchResponse])
+async def get_friend_taste_match(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get friends with similar taste (placeholder for now)"""
+    # TODO: Implement friends system and taste matching algorithm
+    # For now, return empty list
+    return []
 
 
 # ============================================================================

@@ -313,3 +313,45 @@ IMPORTANT: Return ONLY valid JSON, no other text.
     except Exception as e:
         logger.error(f"❌ Error in AI extraction: {e}")
         return []
+
+
+def detect_category(place_name: str, description: str = "") -> str:
+    """
+    Use GPT to detect category from place name and description
+    Returns: bar, cafe, restaurant, activity, culture, shop, or place
+    """
+    try:
+        prompt = f"""Categorize this place into ONE category:
+- bar (includes pubs, cocktail bars, wine bars, nightclubs)
+- cafe (includes coffee shops, tea houses, bakeries)
+- restaurant (includes dining, eateries, food places)
+- activity (includes gyms, spas, entertainment, sports)
+- culture (includes museums, galleries, theaters, landmarks)
+- shop (includes retail, boutiques, stores)
+
+Place: {place_name}
+Description: {description[:200]}
+
+Return ONLY the category name (lowercase), nothing else."""
+
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=10
+        )
+        
+        category = response.choices[0].message.content.strip().lower()
+        
+        # Validate category
+        valid_categories = ["bar", "cafe", "restaurant", "activity", "culture", "shop"]
+        if category in valid_categories:
+            logger.info(f"✅ Detected category: {category} for {place_name}")
+            return category
+        else:
+            logger.warning(f"⚠️ Invalid category '{category}' for {place_name}, defaulting to 'place'")
+            return "place"
+            
+    except Exception as e:
+        logger.error(f"❌ Category detection error: {e}")
+        return "place"

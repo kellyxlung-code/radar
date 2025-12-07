@@ -1002,12 +1002,12 @@ extension ShareViewController: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         if textField == searchInputField, let query = textField.text, !query.isEmpty {
             // Perform search
-            performGooglePlacesSearch(query: query)
+            searchGooglePlaces(query: query)
         } else if textField == errorSearchField, let query = textField.text, !query.isEmpty {
             // Transition to search mode and perform search
             currentState = .searching
             searchInputField.text = query
-            performGooglePlacesSearch(query: query)
+            searchGooglePlaces(query: query)
         }
         textField.resignFirstResponder()
         return true

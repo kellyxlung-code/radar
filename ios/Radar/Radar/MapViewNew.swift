@@ -474,20 +474,20 @@ struct PlaceDetailSheet: View {
                             .cornerRadius(22)
                         }
                         
-                        // Want to try button (toggle)
+                        // Want to try button (bookmark - always orange since place is pinned)
                         Button(action: {
                             toggleWantToTry()
                         }) {
                             HStack(spacing: 4) {
-                                Image(systemName: place.is_visited == false ? "star.fill" : "star")
+                                Image(systemName: "bookmark.fill")
                                     .font(.system(size: 14))
                                 Text("want to try")
                                     .font(.system(size: 14, weight: .semibold))
                             }
-                            .foregroundColor(place.is_visited == false ? .white : .black)
+                            .foregroundColor(.white)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
-                            .background(place.is_visited == false ? Color.orange : Color.gray.opacity(0.1))
+                            .background(Color.orange)
                             .cornerRadius(22)
                         }
                         .disabled(isUpdating)
@@ -558,10 +558,9 @@ struct PlaceDetailSheet: View {
     }
     
     func toggleWantToTry() {
-        // Toggle: if currently nil or visited=true, set to false (want to try)
-        // If already want to try (false), unmark it (nil)
-        let newValue: Bool? = (place.is_visited == false) ? nil : false
-        updateVisitStatus(visited: newValue)
+        // "want to try" = pinned on map
+        // Toggling off = unpin (delete place)
+        deletePlace()
     }
     
     func toggleVisited() {
@@ -602,6 +601,38 @@ struct PlaceDetailSheet: View {
                     isPresented = false
                 } else {
                     print("❌ Failed to update visit status")
+                }
+            }
+        }.resume()
+    }
+    
+    func deletePlace() {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
+            print("❌ No auth token")
+            return
+        }
+        
+        isUpdating = true
+        
+        guard let url = URL(string: "\(Config.apiBaseURL)/places/\(place.id)") else {
+            isUpdating = false
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                isUpdating = false
+                
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    print("✅ Place deleted (unpinned)")
+                    // Close the sheet and refresh map
+                    isPresented = false
+                } else {
+                    print("❌ Failed to delete place")
                 }
             }
         }.resume()

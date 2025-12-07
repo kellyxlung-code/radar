@@ -351,139 +351,202 @@ struct PlaceDetailSheet: View {
         VStack {
             Spacer()
             
-            VStack(alignment: .leading, spacing: 16) {
-                // Header with close button
-                HStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Close button (top-right)
+                    HStack {
+                        Spacer()
+                        Button(action: { isPresented = false }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 28))
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    
+                    // Name
                     Text(place.name)
-                        .font(.title2.bold())
+                        .font(.system(size: 28, weight: .bold))
                         .foregroundColor(.black)
+                        .padding(.horizontal, 20)
                     
-                    Spacer()
-                    
-                    Button(action: { isPresented = false }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(.gray)
-                    }
-                }
-                
-                // Photo
-                if let photoUrl = place.photo_url, let url = URL(string: photoUrl) {
-                    AsyncImage(url: url) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(height: 200)
-                            .clipped()
-                            .cornerRadius(12)
-                    } placeholder: {
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(height: 200)
-                            .cornerRadius(12)
-                    }
-                } else {
-                    // Fallback: Show emoji if no photo
-                    ZStack {
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.1))
-                            .frame(height: 200)
-                            .cornerRadius(12)
-                        
-                        Text(place.displayEmoji)
-                            .font(.system(size: 80))
-                    }
-                }
-                
-                // Rating
-                if let rating = place.rating {
-                    HStack(spacing: 4) {
-                        ForEach(0..<5) { index in
-                            Image(systemName: index < Int(rating) ? "star.fill" : "star")
-                                .foregroundColor(.orange)
-                                .font(.system(size: 20))
-                        }
-                        Text(String(format: "%.1f", rating))
-                            .font(.headline)
-                            .foregroundColor(.black)
-                    }
-                }
-                
-                // Address
-                if let address = place.address {
-                    HStack(spacing: 8) {
-                        Image(systemName: "mappin.circle.fill")
-                            .foregroundColor(.orange)
+                    // Address
+                    if let address = place.address {
                         Text(address)
-                            .font(.body)
+                            .font(.system(size: 16))
                             .foregroundColor(.gray)
-                            .lineLimit(2)
-                    }
-                }
-                
-                // Buttons: Directions, to try, been (all same row)
-                HStack(spacing: 8) {
-                    // Directions button
-                    Button(action: {
-                        openDirections()
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
-                                .font(.system(size: 16))
-                            Text("Directions")
-                                .font(.subheadline)
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.blue)
-                        .cornerRadius(10)
+                            .padding(.horizontal, 20)
                     }
                     
-                    // Want to try button
-                    Button(action: {
-                        updateVisitStatus(visited: false)
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: place.is_visited == false ? "star.fill" : "star")
-                                .font(.system(size: 16))
-                            Text("Want to try")
-                                .font(.subheadline)
+                    // Open status + hours
+                    HStack(spacing: 8) {
+                        if let isOpen = place.is_open_now {
+                            Text(isOpen ? "open" : "closed")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(isOpen ? .green : .red)
                         }
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        
+                        if let hours = place.opening_hours?.todayHours {
+                            Text(hours)
+                                .font(.system(size: 16))
+                                .foregroundColor(.gray)
+                        }
                     }
-                    .disabled(isUpdating)
+                    .padding(.horizontal, 20)
                     
-                    // Visited button
+                    // Photos (horizontal scroll)
+                    if let photoUrl = place.photo_url, let url = URL(string: photoUrl) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                            .frame(width: 280, height: 200)
+                                            .clipped()
+                                            .cornerRadius(12)
+                                    case .failure(_):
+                                        placeholderPhoto
+                                    case .empty:
+                                        placeholderPhoto
+                                    @unknown default:
+                                        placeholderPhoto
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                    }
+                    
+                    // Saved by (mock for now)
+                    HStack(spacing: 8) {
+                        // Profile icons
+                        HStack(spacing: -8) {
+                            ForEach(0..<3) { index in
+                                Circle()
+                                    .fill(Color.orange.opacity(0.3))
+                                    .frame(width: 32, height: 32)
+                                    .overlay(
+                                        Text("\(index + 1)")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundColor(.orange)
+                                    )
+                            }
+                        }
+                        
+                        Text("saved by liese, clairiedance and 7 other people")
+                            .font(.system(size: 14))
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.horizontal, 20)
+                    
+                    // Action buttons (Corner's style)
+                    HStack(spacing: 12) {
+                        // Share button
+                        Button(action: {
+                            sharePlace()
+                        }) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 20))
+                                .foregroundColor(.black)
+                                .frame(width: 50, height: 50)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(25)
+                        }
+                        
+                        // Directions button
+                        Button(action: {
+                            openDirections()
+                        }) {
+                            HStack {
+                                Image(systemName: "location.fill")
+                                    .font(.system(size: 16))
+                                Text("directions")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(25)
+                        }
+                        
+                        // Call button
+                        Button(action: {
+                            callPlace()
+                        }) {
+                            HStack {
+                                Image(systemName: "phone.fill")
+                                    .font(.system(size: 16))
+                                Text("call")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(25)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    
+                    // Visited button (full width)
                     Button(action: {
                         updateVisitStatus(visited: true)
                     }) {
-                        HStack(spacing: 4) {
+                        HStack {
                             Image(systemName: place.is_visited == true ? "checkmark.circle.fill" : "checkmark.circle")
-                                .font(.system(size: 16))
-                            Text("Visited")
-                                .font(.subheadline)
+                                .font(.system(size: 18))
+                            Text(place.is_visited == true ? "Visited" : "Mark as Visited")
+                                .font(.system(size: 16, weight: .semibold))
                         }
-                        .foregroundColor(.black)
+                        .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, 14)
+                        .background(place.is_visited == true ? Color.green : Color.orange)
+                        .cornerRadius(25)
                     }
+                    .padding(.horizontal, 20)
                     .disabled(isUpdating)
                 }
             }
-            .padding()
             .frame(maxWidth: .infinity)
             .background(Color.white)
-            .cornerRadius(20)
-            .shadow(radius: 10)
-            .padding()
+            .cornerRadius(20, corners: [.topLeft, .topRight])
+            .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: -5)
+            .padding(.bottom, 80)
         }
-        .background(Color.black.opacity(0.3))
-        .ignoresSafeArea()
-        .onTapGesture {
-            isPresented = false
+        .background(
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    isPresented = false
+                }
+        )
+    }
+    
+    var placeholderPhoto: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: 280, height: 200)
+            .cornerRadius(12)
+            .overlay(
+                Image(systemName: "photo")
+                    .font(.system(size: 40))
+                    .foregroundColor(.gray)
+            )
+    }
+    
+    func sharePlace() {
+        let text = "\(place.name)\n\(place.address ?? "")"
+        let activityVC = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController {
+            rootVC.present(activityVC, animated: true)
         }
     }
     
@@ -492,6 +555,12 @@ struct PlaceDetailSheet: View {
         let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
         mapItem.name = place.name
         mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving])
+    }
+    
+    func callPlace() {
+        // In a real app, you'd get phone number from Google Places API
+        // For now, just show alert
+        print("📞 Call place: \(place.name)")
     }
     
     func updateVisitStatus(visited: Bool) {
@@ -678,5 +747,27 @@ struct SearchResultBottomSheet: View {
         if let url = URL(string: "http://maps.apple.com/?daddr=\(coordinate)&q=\(placeName)") {
             UIApplication.shared.open(url)
         }
+    }
+}
+
+
+// MARK: - View Extension for Selective Corner Radius
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
     }
 }

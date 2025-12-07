@@ -4,6 +4,8 @@ struct HomeDiscoveryView: View {
     @State private var allPlaces: [Place] = []
     @State private var events: [Event] = []
     @State private var trendingPlaces: [TrendingPlace] = []
+    @State private var supportLocalPlaces: [Place] = []
+    @State private var friendMatches: [FriendMatch] = []
     @State private var isLoading = true
     @State private var showImportSheet = false
     @State private var userLocation: (lat: Double, lng: Double)? = nil
@@ -166,8 +168,65 @@ struct HomeDiscoveryView: View {
                                     }
                                 }
                             }
+                            
+                            // SECTION 3: Nearby Favourites
+                            if !nearbyFavorites.isEmpty {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Text("Nearby Favourites 📍")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal)
+                                    
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 16) {
+                                            ForEach(nearbyFavorites) { place in
+                                                NearbyPlaceCard(place: place, userLocation: userLocation)
+                                            }
+                                        }
+                                        .padding(.horizontal)
+                                    }
+                                }
+                            }
+                            
+                            // SECTION 4: Support Local
+                            if !supportLocalPlaces.isEmpty {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Text("Support Local 💛")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal)
+                                    
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 16) {
+                                            ForEach(supportLocalPlaces) { place in
+                                                SupportLocalCard(place: place)
+                                            }
+                                        }
+                                        .padding(.horizontal)
+                                    }
+                                }
+                            }
+                            
+                            // SECTION 5: Friend Taste Match
+                            if !friendMatches.isEmpty {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Text("Friend Taste Match 🤝")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal)
+                                    
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 16) {
+                                            ForEach(friendMatches) { friend in
+                                                FriendMatchCard(friend: friend)
+                                            }
+                                        }
+                                        .padding(.horizontal)
+                                    }
+                                }
+                            }
 
-                            // SECTION 3: Picked for You
+                            // SECTION 6: Picked for You
                             if !pickedForYou.isEmpty {
                                 VStack(alignment: .leading, spacing: 16) {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -270,6 +329,8 @@ struct HomeDiscoveryView: View {
                 loadUserLocation()
                 loadEvents()
                 loadTrending()
+                loadSupportLocal()
+                loadFriendTasteMatch()
             }
         }
     }
@@ -410,6 +471,86 @@ struct HomeDiscoveryView: View {
                 print("❌ Decode /trending error:", error.localizedDescription)
                 if let jsonString = String(data: data, encoding: .utf8) {
                     print("📄 Trending Response:", jsonString)
+                }
+            }
+        }.resume()
+    }
+    
+    func loadSupportLocal() {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
+            print("⚠️ No token for support-local")
+            return
+        }
+        
+        guard let url = URL(string: "\(Config.apiBaseURL)/support-local") else {
+            print("⚠️ Invalid support-local URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ /support-local error:", error.localizedDescription)
+                return
+            }
+            
+            guard let data = data else {
+                print("⚠️ No support-local data")
+                return
+            }
+            
+            do {
+                let decoded = try JSONDecoder().decode([Place].self, from: data)
+                DispatchQueue.main.async {
+                    self.supportLocalPlaces = decoded
+                    print("✅ Loaded \(decoded.count) support local places")
+                }
+            } catch {
+                print("❌ Decode /support-local error:", error.localizedDescription)
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("📄 Support Local Response:", jsonString)
+                }
+            }
+        }.resume()
+    }
+    
+    func loadFriendTasteMatch() {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
+            print("⚠️ No token for friend-taste-match")
+            return
+        }
+        
+        guard let url = URL(string: "\(Config.apiBaseURL)/friend-taste-match") else {
+            print("⚠️ Invalid friend-taste-match URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ /friend-taste-match error:", error.localizedDescription)
+                return
+            }
+            
+            guard let data = data else {
+                print("⚠️ No friend-taste-match data")
+                return
+            }
+            
+            do {
+                let decoded = try JSONDecoder().decode([FriendMatch].self, from: data)
+                DispatchQueue.main.async {
+                    self.friendMatches = decoded
+                    print("✅ Loaded \(decoded.count) friend matches")
+                }
+            } catch {
+                print("❌ Decode /friend-taste-match error:", error.localizedDescription)
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("📄 Friend Match Response:", jsonString)
                 }
             }
         }.resume()
@@ -1161,6 +1302,218 @@ struct TrendingPlaceCard: View {
             .padding(12)
         }
         .frame(width: 280)
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+    }
+}
+
+
+// MARK: - Nearby Place Card
+struct NearbyPlaceCard: View {
+    let place: Place
+    let userLocation: (lat: Double, lng: Double)?
+    
+    var distance: Double {
+        guard let userLoc = userLocation else { return 0 }
+        let R = 6371.0
+        let dLat = (place.lat - userLoc.lat) * .pi / 180
+        let dLng = (place.lng - userLoc.lng) * .pi / 180
+        let a = sin(dLat/2) * sin(dLat/2) +
+                cos(userLoc.lat * .pi / 180) * cos(place.lat * .pi / 180) *
+                sin(dLng/2) * sin(dLng/2)
+        let c = 2 * atan2(sqrt(a), sqrt(1-a))
+        return R * c
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Place Photo
+            if let photoUrl = place.photo_url, let url = URL(string: photoUrl) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 280, height: 180)
+                            .overlay(ProgressView())
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 280, height: 180)
+                            .clipped()
+                    case .failure:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 280, height: 180)
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .foregroundColor(.gray)
+                            )
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            } else {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 280, height: 180)
+                    .overlay(
+                        Text(place.displayEmoji)
+                            .font(.system(size: 48))
+                    )
+            }
+            
+            // Place Info
+            VStack(alignment: .leading, spacing: 8) {
+                Text(place.name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.black)
+                    .lineLimit(2)
+                
+                if let district = place.district {
+                    Text(district)
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
+                
+                // Distance
+                HStack(spacing: 4) {
+                    Text("📍")
+                        .font(.system(size: 14))
+                    Text(String(format: "%.1f km away", distance))
+                        .font(.system(size: 14))
+                        .foregroundColor(.orange)
+                }
+            }
+            .padding(12)
+        }
+        .frame(width: 280)
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+    }
+}
+
+
+// MARK: - Support Local Card
+struct SupportLocalCard: View {
+    let place: Place
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Place Photo with yellow heart badge
+            ZStack(alignment: .topTrailing) {
+                if let photoUrl = place.photo_url, let url = URL(string: photoUrl) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .empty:
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.2))
+                                .frame(width: 280, height: 180)
+                                .overlay(ProgressView())
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 280, height: 180)
+                                .clipped()
+                        case .failure:
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.2))
+                                .frame(width: 280, height: 180)
+                                .overlay(
+                                    Image(systemName: "photo")
+                                        .foregroundColor(.gray)
+                                )
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                } else {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(width: 280, height: 180)
+                        .overlay(
+                            Text(place.displayEmoji)
+                                .font(.system(size: 48))
+                        )
+                }
+                
+                // Yellow heart badge
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.yellow)
+                    .padding(8)
+                    .background(Color.white.opacity(0.9))
+                    .clipShape(Circle())
+                    .padding(8)
+            }
+            
+            // Place Info
+            VStack(alignment: .leading, spacing: 8) {
+                Text(place.name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.black)
+                    .lineLimit(2)
+                
+                if let district = place.district {
+                    Text(district)
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
+                
+                // Local badge
+                Text("🏠 Independent Business")
+                    .font(.system(size: 12))
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(4)
+            }
+            .padding(12)
+        }
+        .frame(width: 280)
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+    }
+}
+
+
+// MARK: - Friend Match Card (Simplified)
+struct FriendMatchCard: View {
+    let friend: FriendMatch
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Profile icon
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.2))
+                    .frame(width: 80, height: 80)
+                
+                Text(String(friend.friend_name.prefix(1)).uppercased())
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(.orange)
+            }
+            
+            // Friend name
+            Text(friend.friend_name)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.black)
+            
+            // Big percentage
+            Text("\(friend.match_percentage)%")
+                .font(.system(size: 48, weight: .bold))
+                .foregroundColor(.orange)
+        }
+        .frame(width: 140)
+        .padding(.vertical, 16)
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)

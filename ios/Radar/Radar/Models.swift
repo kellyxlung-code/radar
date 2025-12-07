@@ -103,3 +103,40 @@ struct ImportCandidateResponse: Codable {
     let ok: Bool
     let candidate: Place?
 }
+
+
+// MARK: - Event Model
+struct Event: Identifiable, Codable {
+    let id: Int
+    let name: String
+    let description: String
+    let photo_url: String
+    let location: String
+    let district: String
+    let start_date: String
+    let end_date: String
+    let category: String
+    let url: String
+    let time_description: String
+}
+
+// MARK: - Trending Place Model
+struct TrendingPlace: Identifiable, Codable {
+    let id: Int
+    let name: String
+    let address: String?
+    let district: String?
+    let lat: Double
+    let lng: Double
+    let category: String?
+    let emoji: String?
+    let photo_url: String?
+    let rating: Double?
+    let total_saves: Int
+    let recent_saves: Int
+    let trending_score: Double
+    
+    var displayEmoji: String {
+        emoji ?? "📍"
+    }
+}

@@ -30,6 +30,7 @@ struct Place: Identifiable, Codable {
 
     // User / AI state
     let is_pinned: Bool?
+    let is_visited: Bool?  // ✅ ADDED: User has visited this place
     let notes: String?
     let confidence: Double?
     let extraction_method: String?

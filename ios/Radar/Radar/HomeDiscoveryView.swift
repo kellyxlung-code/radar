@@ -29,7 +29,7 @@ struct HomeDiscoveryView: View {
         if let category = selectedCategory {
             if category == "trending" {
                 // Show all places sorted by created_at (most recent first)
-                return allPlaces.sorted { ($0.id ?? 0) > ($1.id ?? 0) }
+                return allPlaces.sorted { $0.id > $1.id }
             } else {
                 // Map category names to database values
                 let categoryMap: [String: String] = [

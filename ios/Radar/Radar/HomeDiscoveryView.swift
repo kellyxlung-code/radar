@@ -270,30 +270,6 @@ struct HomeDiscoveryView: View {
                                 }
                             }
 
-                            // SECTION 3: Nearby Favourites
-                            if !nearbyFavorites.isEmpty {
-                                VStack(alignment: .leading, spacing: 16) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Nearby Favourites 📍")
-                                            .font(.system(size: 24, weight: .bold))
-                                            .foregroundColor(.black)  // ✅ BLACK TEXT
-                                        Text("Your saved spots nearby — ready to check out IRL")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.gray)  // ✅ GREY TEXT
-                                    }
-                                    .padding(.horizontal)
-
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 16) {
-                                            ForEach(nearbyFavorites.prefix(10)) { place in
-                                                CompactSquareCard(place: place, userLocation: userLocation)
-                                            }
-                                        }
-                                        .padding(.horizontal)
-                                    }
-                                }
-                            }
-
                             Spacer(minLength: 40)
                         }
                     }

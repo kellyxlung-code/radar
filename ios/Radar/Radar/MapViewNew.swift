@@ -443,74 +443,74 @@ struct PlaceDetailSheet: View {
                     }
                     .padding(.horizontal, 20)
                     
-                    // Action buttons (Corner's style)
-                    HStack(spacing: 12) {
+                    // All action buttons in one row
+                    HStack(spacing: 8) {
                         // Share button
                         Button(action: {
                             sharePlace()
                         }) {
                             Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 20))
+                                .font(.system(size: 18))
                                 .foregroundColor(.black)
-                                .frame(width: 50, height: 50)
+                                .frame(width: 44, height: 44)
                                 .background(Color.gray.opacity(0.1))
-                                .cornerRadius(25)
+                                .cornerRadius(22)
                         }
                         
                         // Directions button
                         Button(action: {
                             openDirections()
                         }) {
-                            HStack {
+                            HStack(spacing: 4) {
                                 Image(systemName: "location.fill")
-                                    .font(.system(size: 16))
+                                    .font(.system(size: 14))
                                 Text("directions")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.system(size: 14, weight: .semibold))
                             }
                             .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
                             .background(Color.gray.opacity(0.1))
-                            .cornerRadius(25)
+                            .cornerRadius(22)
                         }
                         
-                        // Call button
+                        // Want to try button (bookmark - always orange since place is pinned)
                         Button(action: {
-                            callPlace()
+                            toggleWantToTry()
                         }) {
-                            HStack {
-                                Image(systemName: "phone.fill")
-                                    .font(.system(size: 16))
-                                Text("call")
-                                    .font(.system(size: 16, weight: .semibold))
+                            HStack(spacing: 4) {
+                                Image(systemName: "bookmark.fill")
+                                    .font(.system(size: 14))
+                                Text("want to try")
+                                    .font(.system(size: 14, weight: .semibold))
                             }
-                            .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(25)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
+                            .background(Color.orange)
+                            .cornerRadius(22)
                         }
+                        .disabled(isUpdating)
+                        
+                        // Visited button (toggle)
+                        Button(action: {
+                            toggleVisited()
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: place.is_visited == true ? "checkmark.circle.fill" : "checkmark.circle")
+                                    .font(.system(size: 14))
+                                Text("visited")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .foregroundColor(place.is_visited == true ? .white : .black)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
+                            .background(place.is_visited == true ? Color.green : Color.gray.opacity(0.1))
+                            .cornerRadius(22)
+                        }
+                        .disabled(isUpdating)
                     }
                     .padding(.horizontal, 20)
-                    
-                    // Visited button (full width)
-                    Button(action: {
-                        updateVisitStatus(visited: true)
-                    }) {
-                        HStack {
-                            Image(systemName: place.is_visited == true ? "checkmark.circle.fill" : "checkmark.circle")
-                                .font(.system(size: 18))
-                            Text(place.is_visited == true ? "Visited" : "Mark as Visited")
-                                .font(.system(size: 16, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(place.is_visited == true ? Color.green : Color.orange)
-                        .cornerRadius(25)
-                    }
-                    .padding(.horizontal, 20)
-                    .disabled(isUpdating)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -557,13 +557,20 @@ struct PlaceDetailSheet: View {
         mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving])
     }
     
-    func callPlace() {
-        // In a real app, you'd get phone number from Google Places API
-        // For now, just show alert
-        print("📞 Call place: \(place.name)")
+    func toggleWantToTry() {
+        // "want to try" = pinned on map
+        // Toggling off = unpin (delete place)
+        deletePlace()
     }
     
-    func updateVisitStatus(visited: Bool) {
+    func toggleVisited() {
+        // Toggle: if currently nil or want to try (false), set to true (visited)
+        // If already visited (true), unmark it (nil)
+        let newValue: Bool? = (place.is_visited == true) ? nil : true
+        updateVisitStatus(visited: newValue)
+    }
+    
+    func updateVisitStatus(visited: Bool?) {
         guard let token = KeychainHelper.shared.readAccessToken() else {
             print("❌ No auth token")
             return
@@ -581,8 +588,8 @@ struct PlaceDetailSheet: View {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        let payload: [String: Any] = ["is_visited": visited]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        let payload: [String: Any?] = ["is_visited": visited]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload, options: .fragmentsAllowed)
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
@@ -594,6 +601,38 @@ struct PlaceDetailSheet: View {
                     isPresented = false
                 } else {
                     print("❌ Failed to update visit status")
+                }
+            }
+        }.resume()
+    }
+    
+    func deletePlace() {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
+            print("❌ No auth token")
+            return
+        }
+        
+        isUpdating = true
+        
+        guard let url = URL(string: "\(Config.apiBaseURL)/places/\(place.id)") else {
+            isUpdating = false
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                isUpdating = false
+                
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    print("✅ Place deleted (unpinned)")
+                    // Close the sheet and refresh map
+                    isPresented = false
+                } else {
+                    print("❌ Failed to delete place")
                 }
             }
         }.resume()

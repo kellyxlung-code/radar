@@ -141,6 +141,7 @@ class ShareViewController: UIViewController {
     private let errorContainerView = UIView()
     private let errorIconLabel = UILabel()
     private let errorMessageLabel = UILabel()
+    private let errorSearchField = UITextField()
     private let errorCloseButton = UIButton(type: .system)
     
     private enum State {
@@ -503,7 +504,7 @@ class ShareViewController: UIViewController {
     }
     
     private func setupErrorUI() {
-        // Container - White background
+        // Container - White background (Corner style)
         errorContainerView.backgroundColor = .white
         errorContainerView.layer.cornerRadius = 24
         errorContainerView.layer.shadowColor = UIColor.black.cgColor
@@ -513,49 +514,66 @@ class ShareViewController: UIViewController {
         errorContainerView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(errorContainerView)
         
-        // Error icon
-        errorIconLabel.text = "⚠️"
+        // Close button (X at top right)
+        errorCloseButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+        errorCloseButton.tintColor = .black
+        errorCloseButton.addTarget(self, action: #selector(closeExtension), for: .touchUpInside)
+        errorCloseButton.translatesAutoresizingMaskIntoConstraints = false
+        errorContainerView.addSubview(errorCloseButton)
+        
+        // Error icon (👀 emoji)
+        errorIconLabel.text = "👀"
         errorIconLabel.font = .systemFont(ofSize: 60)
         errorIconLabel.textAlignment = .center
         errorIconLabel.translatesAutoresizingMaskIntoConstraints = false
         errorContainerView.addSubview(errorIconLabel)
         
-        // Error message
-        errorMessageLabel.font = .systemFont(ofSize: 16, weight: .medium)
+        // Error message ("we couldn't find the place")
+        errorMessageLabel.text = "we couldn't find the place"
+        errorMessageLabel.font = .systemFont(ofSize: 24, weight: .bold)
         errorMessageLabel.textAlignment = .center
-        errorMessageLabel.textColor = .systemRed
+        errorMessageLabel.textColor = .black
         errorMessageLabel.numberOfLines = 0
         errorMessageLabel.translatesAutoresizingMaskIntoConstraints = false
         errorContainerView.addSubview(errorMessageLabel)
         
-        // Close button
-        errorCloseButton.setTitle("Done", for: .normal)
-        errorCloseButton.setTitleColor(.white, for: .normal)
-        errorCloseButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
-        errorCloseButton.backgroundColor = .black
-        errorCloseButton.layer.cornerRadius = 12
-        errorCloseButton.addTarget(self, action: #selector(closeExtension), for: .touchUpInside)
-        errorCloseButton.translatesAutoresizingMaskIntoConstraints = false
-        errorContainerView.addSubview(errorCloseButton)
+        // Search field (Corner style)
+        errorSearchField.placeholder = "search for it yourself"
+        errorSearchField.font = .systemFont(ofSize: 16)
+        errorSearchField.textAlignment = .center
+        errorSearchField.backgroundColor = UIColor.systemGray6
+        errorSearchField.layer.cornerRadius = 24
+        errorSearchField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 20, height: 0))
+        errorSearchField.leftViewMode = .always
+        errorSearchField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 20, height: 0))
+        errorSearchField.rightViewMode = .always
+        errorSearchField.delegate = self
+        errorSearchField.returnKeyType = .search
+        errorSearchField.translatesAutoresizingMaskIntoConstraints = false
+        errorContainerView.addSubview(errorSearchField)
         
         NSLayoutConstraint.activate([
-            errorContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            errorContainerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            errorContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
-            errorContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
+            errorContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            errorContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            errorContainerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            errorContainerView.heightAnchor.constraint(equalToConstant: 400),
             
-            errorIconLabel.topAnchor.constraint(equalTo: errorContainerView.topAnchor, constant: 40),
+            errorCloseButton.topAnchor.constraint(equalTo: errorContainerView.topAnchor, constant: 20),
+            errorCloseButton.trailingAnchor.constraint(equalTo: errorContainerView.trailingAnchor, constant: -20),
+            errorCloseButton.widthAnchor.constraint(equalToConstant: 44),
+            errorCloseButton.heightAnchor.constraint(equalToConstant: 44),
+            
+            errorIconLabel.topAnchor.constraint(equalTo: errorContainerView.topAnchor, constant: 80),
             errorIconLabel.centerXAnchor.constraint(equalTo: errorContainerView.centerXAnchor),
             
-            errorMessageLabel.topAnchor.constraint(equalTo: errorIconLabel.bottomAnchor, constant: 20),
-            errorMessageLabel.leadingAnchor.constraint(equalTo: errorContainerView.leadingAnchor, constant: 24),
-            errorMessageLabel.trailingAnchor.constraint(equalTo: errorContainerView.trailingAnchor, constant: -24),
+            errorMessageLabel.topAnchor.constraint(equalTo: errorIconLabel.bottomAnchor, constant: 24),
+            errorMessageLabel.leadingAnchor.constraint(equalTo: errorContainerView.leadingAnchor, constant: 40),
+            errorMessageLabel.trailingAnchor.constraint(equalTo: errorContainerView.trailingAnchor, constant: -40),
             
-            errorCloseButton.topAnchor.constraint(equalTo: errorMessageLabel.bottomAnchor, constant: 24),
-            errorCloseButton.leadingAnchor.constraint(equalTo: errorContainerView.leadingAnchor, constant: 24),
-            errorCloseButton.trailingAnchor.constraint(equalTo: errorContainerView.trailingAnchor, constant: -24),
-            errorCloseButton.heightAnchor.constraint(equalToConstant: 50),
-            errorCloseButton.bottomAnchor.constraint(equalTo: errorContainerView.bottomAnchor, constant: -32)
+            errorSearchField.topAnchor.constraint(equalTo: errorMessageLabel.bottomAnchor, constant: 40),
+            errorSearchField.leadingAnchor.constraint(equalTo: errorContainerView.leadingAnchor, constant: 40),
+            errorSearchField.trailingAnchor.constraint(equalTo: errorContainerView.trailingAnchor, constant: -40),
+            errorSearchField.heightAnchor.constraint(equalToConstant: 48)
         ])
     }
     
@@ -792,7 +810,8 @@ class ShareViewController: UIViewController {
             successContainerView.isHidden = true
             searchContainerView.isHidden = true
             errorContainerView.isHidden = false
-            errorMessageLabel.text = message
+            // Keep the hardcoded "we couldn't find the place" message
+            // errorMessageLabel.text = message  // Don't override
         }
     }
     
@@ -971,10 +990,25 @@ extension ShareViewController: UITextFieldDelegate {
             // Clear search input and focus it
             searchInputField.text = ""
             searchInputField.becomeFirstResponder()
+        } else if textField == errorSearchField {
+            // Transition from error to search mode
+            currentState = .searching
+            // Copy text from error field to search field
+            searchInputField.text = errorSearchField.text
+            searchInputField.becomeFirstResponder()
         }
     }
     
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        if textField == searchInputField, let query = textField.text, !query.isEmpty {
+            // Perform search
+            performGooglePlacesSearch(query: query)
+        } else if textField == errorSearchField, let query = textField.text, !query.isEmpty {
+            // Transition to search mode and perform search
+            currentState = .searching
+            searchInputField.text = query
+            performGooglePlacesSearch(query: query)
+        }
         textField.resignFirstResponder()
         return true
     }

@@ -198,7 +198,7 @@ struct MapViewNew: View {
 
             // Place detail
             if showPlaceDetail, let place = selectedPlace {
-                PlaceDetailSheet(place: place, isPresented: $showPlaceDetail)
+                PlaceDetailSheet(place: place, isPresented: $showPlaceDetail, onDelete: loadPlaces)
             }
             
             // Search result detail bottom sheet
@@ -345,6 +345,7 @@ struct CategoryFilterChip: View {
 struct PlaceDetailSheet: View {
     let place: Place
     @Binding var isPresented: Bool
+    var onDelete: (() -> Void)? = nil
     @State private var isUpdating = false
     
     var body: some View {
@@ -631,6 +632,7 @@ struct PlaceDetailSheet: View {
                     print("✅ Place deleted (unpinned)")
                     // Close the sheet and refresh map
                     isPresented = false
+                    onDelete?()
                 } else {
                     print("❌ Failed to delete place")
                 }

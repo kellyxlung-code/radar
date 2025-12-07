@@ -54,6 +54,10 @@ struct MapViewNew: View {
                 }
             }
             .ignoresSafeArea()
+            .onTapGesture {
+                // Dismiss keyboard when tapping on map
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
 
             // Top controls
             VStack {

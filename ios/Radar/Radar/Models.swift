@@ -166,3 +166,14 @@ struct GooglePlaceResult: Identifiable, Codable {
 struct GoogleSearchResponse: Codable {
     let results: [GooglePlaceResult]
 }
+
+
+// MARK: - Friend Match Model
+struct FriendMatch: Identifiable, Codable {
+    let friend_id: Int
+    let friend_name: String
+    let match_percentage: Int
+    let mutual_places: Int
+    
+    var id: Int { friend_id }
+}

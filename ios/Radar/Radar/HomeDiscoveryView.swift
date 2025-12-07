@@ -5,6 +5,7 @@ struct HomeDiscoveryView: View {
     @State private var events: [Event] = []
     @State private var trendingPlaces: [TrendingPlace] = []
     @State private var supportLocalPlaces: [Place] = []
+    @State private var friendMatches: [FriendMatch] = []
     @State private var isLoading = true
     @State private var showImportSheet = false
     @State private var userLocation: (lat: Double, lng: Double)? = nil
@@ -205,8 +206,27 @@ struct HomeDiscoveryView: View {
                                     }
                                 }
                             }
+                            
+                            // SECTION 5: Friend Taste Match
+                            if !friendMatches.isEmpty {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Text("Friend Taste Match 🤝")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal)
+                                    
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 16) {
+                                            ForEach(friendMatches) { friend in
+                                                FriendMatchCard(friend: friend)
+                                            }
+                                        }
+                                        .padding(.horizontal)
+                                    }
+                                }
+                            }
 
-                            // SECTION 5: Picked for You
+                            // SECTION 6: Picked for You
                             if !pickedForYou.isEmpty {
                                 VStack(alignment: .leading, spacing: 16) {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -310,6 +330,7 @@ struct HomeDiscoveryView: View {
                 loadEvents()
                 loadTrending()
                 loadSupportLocal()
+                loadFriendTasteMatch()
             }
         }
     }
@@ -490,6 +511,46 @@ struct HomeDiscoveryView: View {
                 print("❌ Decode /support-local error:", error.localizedDescription)
                 if let jsonString = String(data: data, encoding: .utf8) {
                     print("📄 Support Local Response:", jsonString)
+                }
+            }
+        }.resume()
+    }
+    
+    func loadFriendTasteMatch() {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
+            print("⚠️ No token for friend-taste-match")
+            return
+        }
+        
+        guard let url = URL(string: "\(Config.apiBaseURL)/friend-taste-match") else {
+            print("⚠️ Invalid friend-taste-match URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ /friend-taste-match error:", error.localizedDescription)
+                return
+            }
+            
+            guard let data = data else {
+                print("⚠️ No friend-taste-match data")
+                return
+            }
+            
+            do {
+                let decoded = try JSONDecoder().decode([FriendMatch].self, from: data)
+                DispatchQueue.main.async {
+                    self.friendMatches = decoded
+                    print("✅ Loaded \(decoded.count) friend matches")
+                }
+            } catch {
+                print("❌ Decode /friend-taste-match error:", error.localizedDescription)
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("📄 Friend Match Response:", jsonString)
                 }
             }
         }.resume()
@@ -1417,6 +1478,42 @@ struct SupportLocalCard: View {
             .padding(12)
         }
         .frame(width: 280)
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+    }
+}
+
+
+// MARK: - Friend Match Card (Simplified)
+struct FriendMatchCard: View {
+    let friend: FriendMatch
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Profile icon
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.2))
+                    .frame(width: 80, height: 80)
+                
+                Text(String(friend.friend_name.prefix(1)).uppercased())
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(.orange)
+            }
+            
+            // Friend name
+            Text(friend.friend_name)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.black)
+            
+            // Big percentage
+            Text("\(friend.match_percentage)%")
+                .font(.system(size: 48, weight: .bold))
+                .foregroundColor(.orange)
+        }
+        .frame(width: 140)
+        .padding(.vertical, 16)
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)

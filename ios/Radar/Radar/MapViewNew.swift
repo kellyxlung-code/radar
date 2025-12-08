@@ -527,20 +527,21 @@ struct PlaceDetailSheet: View {
                             .cornerRadius(22)
                         }
                         
-                        // Want to try button (bookmark - toggle based on is_pinned)
+                        // Want to try button (bookmark - orange if saved, gray if not)
                         Button(action: {
                             toggleWantToTry()
                         }) {
+                            let isSaved = place.id > 0
                             HStack(spacing: 4) {
-                                Image(systemName: (place.is_pinned ?? false) ? "bookmark.fill" : "bookmark")
+                                Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
                                     .font(.system(size: 14))
                                 Text("want to try")
                                     .font(.system(size: 14, weight: .semibold))
                             }
-                            .foregroundColor((place.is_pinned ?? false) ? .white : .black)
+                            .foregroundColor(isSaved ? .white : .black)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
-                            .background((place.is_pinned ?? false) ? Color.orange : Color.gray.opacity(0.1))
+                            .background(isSaved ? Color.orange : Color.gray.opacity(0.1))
                             .cornerRadius(22)
                         }
                         .disabled(isUpdating)
@@ -611,18 +612,15 @@ struct PlaceDetailSheet: View {
     }
     
     func toggleWantToTry() {
-        // "want to try" = pinned on map
-        // If place is not saved yet (id == 0) or not pinned → save it
-        // If place is already pinned → delete it (unpin)
+        // "want to try" = saved to backend
+        // If place is not saved yet (id == 0) → save it
+        // If place is already saved (id > 0) → delete it
         
         print("🔘 toggleWantToTry called")
         print("   place.id: \(place.id)")
-        print("   place.is_pinned: \(String(describing: place.is_pinned))")
+        print("   place.name: \(place.name)")
         
-        // is_pinned is Bool?, so check for nil or false
-        let isPinned = place.is_pinned ?? false
-        
-        if place.id == 0 || !isPinned {
+        if place.id == 0 {
             print("   → Saving place (pinning to map)")
             savePlace()
         } else {

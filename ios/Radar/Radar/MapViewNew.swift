@@ -264,7 +264,15 @@ struct MapViewNew: View {
     // Convert GooglePlaceResult to Place for consistent detail sheet
     private func convertToPlace(_ result: GooglePlaceResult) -> Place {
         // Check if this place is already pinned
-        let isPinned = places.contains { $0.place_id == result.id }
+        // Must check for non-nil place_id before comparing
+        let isPinned = places.contains { place in
+            guard let placeId = place.place_id else { return false }
+            return placeId == result.id
+        }
+        
+        print("🔍 Search result: \(result.name)")
+        print("   Google Place ID: \(result.id)")
+        print("   Is already pinned: \(isPinned)")
         
         return Place(
             id: 0, // Temporary ID for unsaved places
@@ -343,6 +351,9 @@ struct MapViewNew: View {
     }
 
     private func selectSearchResult(_ result: GooglePlaceResult) {
+        // Dismiss keyboard first
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        
         searchText = ""
         showSearchResults = false
         searchResults = []
@@ -516,20 +527,20 @@ struct PlaceDetailSheet: View {
                             .cornerRadius(22)
                         }
                         
-                        // Want to try button (bookmark - always orange since place is pinned)
+                        // Want to try button (bookmark - toggle based on is_pinned)
                         Button(action: {
                             toggleWantToTry()
                         }) {
                             HStack(spacing: 4) {
-                                Image(systemName: "bookmark.fill")
+                                Image(systemName: (place.is_pinned ?? false) ? "bookmark.fill" : "bookmark")
                                     .font(.system(size: 14))
                                 Text("want to try")
                                     .font(.system(size: 14, weight: .semibold))
                             }
-                            .foregroundColor(.white)
+                            .foregroundColor((place.is_pinned ?? false) ? .white : .black)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
-                            .background(Color.orange)
+                            .background((place.is_pinned ?? false) ? Color.orange : Color.gray.opacity(0.1))
                             .cornerRadius(22)
                         }
                         .disabled(isUpdating)
@@ -603,9 +614,19 @@ struct PlaceDetailSheet: View {
         // "want to try" = pinned on map
         // If place is not saved yet (id == 0) or not pinned → save it
         // If place is already pinned → delete it (unpin)
-        if place.id == 0 || place.is_pinned == false {
+        
+        print("🔘 toggleWantToTry called")
+        print("   place.id: \(place.id)")
+        print("   place.is_pinned: \(String(describing: place.is_pinned))")
+        
+        // is_pinned is Bool?, so check for nil or false
+        let isPinned = place.is_pinned ?? false
+        
+        if place.id == 0 || !isPinned {
+            print("   → Saving place (pinning to map)")
             savePlace()
         } else {
+            print("   → Deleting place (unpinning from map)")
             deletePlace()
         }
     }

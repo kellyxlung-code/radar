@@ -524,20 +524,20 @@ struct PlaceDetailSheet: View {
                             .cornerRadius(22)
                         }
                         
-                        // Want to try button (bookmark - always orange since place is pinned)
+                        // Want to try button (bookmark - toggle based on is_pinned)
                         Button(action: {
                             toggleWantToTry()
                         }) {
                             HStack(spacing: 4) {
-                                Image(systemName: "bookmark.fill")
+                                Image(systemName: (place.is_pinned ?? false) ? "bookmark.fill" : "bookmark")
                                     .font(.system(size: 14))
                                 Text("want to try")
                                     .font(.system(size: 14, weight: .semibold))
                             }
-                            .foregroundColor(.white)
+                            .foregroundColor((place.is_pinned ?? false) ? .white : .black)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
-                            .background(Color.orange)
+                            .background((place.is_pinned ?? false) ? Color.orange : Color.gray.opacity(0.1))
                             .cornerRadius(22)
                         }
                         .disabled(isUpdating)

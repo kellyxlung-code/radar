@@ -1353,6 +1353,7 @@ struct TrendingPlaceCard: View {
 struct NearbyPlaceCard: View {
     let place: Place
     let userLocation: (lat: Double, lng: Double)?
+    @State private var showPlaceDetail = false
     
     var distance: Double {
         guard let userLoc = userLocation else { return 0 }
@@ -1434,6 +1435,12 @@ struct NearbyPlaceCard: View {
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+        .onTapGesture {
+            showPlaceDetail = true
+        }
+        .sheet(isPresented: $showPlaceDetail) {
+            PlaceDetailSheet(place: place, isPresented: $showPlaceDetail)
+        }
     }
 }
 

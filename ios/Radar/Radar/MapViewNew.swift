@@ -351,6 +351,9 @@ struct MapViewNew: View {
     }
 
     private func selectSearchResult(_ result: GooglePlaceResult) {
+        // Dismiss keyboard first
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        
         searchText = ""
         showSearchResults = false
         searchResults = []

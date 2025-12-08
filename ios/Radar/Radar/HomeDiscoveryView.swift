@@ -4,6 +4,7 @@ struct HomeDiscoveryView: View {
     @State private var allPlaces: [Place] = []
     @State private var events: [Event] = []
     @State private var trendingPlaces: [TrendingPlace] = []
+    @State private var pickedForYouPlaces: [Place] = []
     @State private var supportLocalPlaces: [Place] = []
     @State private var friendMatches: [FriendMatch] = []
     @State private var isLoading = true
@@ -33,9 +34,9 @@ struct HomeDiscoveryView: View {
         return allPlaces
     }
 
-    // Top trending places (first 3)
+    // Picked for you - AI recommendations from backend
     var pickedForYou: [Place] {
-        Array(filteredPlaces.prefix(3))
+        pickedForYouPlaces
     }
 
     // Places imported from Instagram/RED (filter by source)
@@ -305,6 +306,7 @@ struct HomeDiscoveryView: View {
                 loadUserLocation()
                 loadEvents()
                 loadTrending()
+                loadPickedForYou()
                 loadSupportLocal()
                 loadFriendTasteMatch()
             }
@@ -447,6 +449,46 @@ struct HomeDiscoveryView: View {
                 print("❌ Decode /trending error:", error.localizedDescription)
                 if let jsonString = String(data: data, encoding: .utf8) {
                     print("📄 Trending Response:", jsonString)
+                }
+            }
+        }.resume()
+    }
+    
+    func loadPickedForYou() {
+        guard let token = KeychainHelper.shared.readAccessToken() else {
+            print("⚠️ No token for picked-for-you")
+            return
+        }
+        
+        guard let url = URL(string: "\(Config.apiBaseURL)/picked-for-you") else {
+            print("⚠️ Invalid picked-for-you URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ /picked-for-you error:", error.localizedDescription)
+                return
+            }
+            
+            guard let data = data else {
+                print("⚠️ No picked-for-you data")
+                return
+            }
+            
+            do {
+                let decoded = try JSONDecoder().decode([Place].self, from: data)
+                DispatchQueue.main.async {
+                    self.pickedForYouPlaces = decoded
+                    print("✅ Loaded \(decoded.count) picked-for-you places")
+                }
+            } catch {
+                print("❌ Decode /picked-for-you error:", error.localizedDescription)
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("📄 Picked For You Response:", jsonString)
                 }
             }
         }.resume()

@@ -995,7 +995,10 @@ extension ShareViewController: UITextFieldDelegate {
             currentState = .searching
             // Copy text from error field to search field
             searchInputField.text = errorSearchField.text
-            searchInputField.becomeFirstResponder()
+            // Delay keyboard appearance to ensure view is ready
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.searchInputField.becomeFirstResponder()
+            }
         }
     }
     

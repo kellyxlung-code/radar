@@ -637,7 +637,13 @@ struct PlaceDetailSheet: View {
         
         isUpdating = true
         
-        guard let url = URL(string: "\(Config.apiBaseURL)/places") else {
+        guard let url = URL(string: "\(Config.apiBaseURL)/add-place-by-id") else {
+            isUpdating = false
+            return
+        }
+        
+        guard let googlePlaceId = place.place_id else {
+            print("❌ No Google Place ID")
             isUpdating = false
             return
         }
@@ -647,15 +653,8 @@ struct PlaceDetailSheet: View {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        let payload: [String: Any?] = [
-            "name": place.name,
-            "lat": place.lat,
-            "lng": place.lng,
-            "address": place.address,
-            "place_id": place.place_id,
-            "photo_url": place.photo_url,
-            "rating": place.rating,
-            "extraction_method": "search"
+        let payload: [String: Any] = [
+            "place_id": googlePlaceId
         ]
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload, options: .fragmentsAllowed)
@@ -664,13 +663,24 @@ struct PlaceDetailSheet: View {
             DispatchQueue.main.async {
                 isUpdating = false
                 
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 201 {
-                    print("✅ Place saved (pinned)")
-                    // Close the sheet and refresh map
-                    isPresented = false
-                    onDelete?() // Reuse onDelete callback to refresh map
-                } else {
-                    print("❌ Failed to save place")
+                if let error = error {
+                    print("❌ Network error: \(error.localizedDescription)")
+                    return
+                }
+                
+                if let httpResponse = response as? HTTPURLResponse {
+                    print("📡 Response status: \(httpResponse.statusCode)")
+                    if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+                        print("✅ Place saved (pinned)")
+                        // Close the sheet and refresh map
+                        isPresented = false
+                        onDelete?() // Reuse onDelete callback to refresh map
+                    } else {
+                        print("❌ Failed to save place - status \(httpResponse.statusCode)")
+                        if let data = data, let responseStr = String(data: data, encoding: .utf8) {
+                            print("   Response: \(responseStr)")
+                        }
+                    }
                 }
             }
         }.resume()

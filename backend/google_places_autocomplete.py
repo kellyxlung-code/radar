@@ -25,8 +25,10 @@ async def autocomplete_search(query: str, location: str = "22.3193,114.1694") ->
     """
     
     if not GOOGLE_PLACES_API_KEY:
-        logger.warning("⚠️ Google Places API key not configured")
+        logger.error("❌ Google Places API key not configured!")
         return []
+    
+    logger.info(f"🔍 Searching Google Places for: '{query}'")
     
     url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
     
@@ -45,40 +47,31 @@ async def autocomplete_search(query: str, location: str = "22.3193,114.1694") ->
             response.raise_for_status()
             data = response.json()
         
+        logger.info(f"🔍 Autocomplete API response status: {data.get('status')}")
+        logger.info(f"🔍 Autocomplete API response: {data}")
+        
         if data.get("status") != "OK":
-            logger.warning(f"⚠️ Autocomplete API status: {data.get('status')}")
+            logger.warning(f"⚠️ Autocomplete API status: {data.get('status')} - {data.get('error_message', 'No error message')}")
             return []
         
         predictions = data.get("predictions", [])
         
-        # Format results with place details (including photos)
+        # Format results with lat/lng
         results = []
         for pred in predictions[:10]:  # Limit to 10 results
             place_id = pred.get("place_id")
             
-            # Get full place details to include photo
-            place_details = await get_place_details(place_id)
-            
-            if place_details:
-                results.append({
-                    "place_id": place_details.get("place_id"),
-                    "name": place_details.get("name", ""),
-                    "address": place_details.get("address", ""),
-                    "lat": place_details.get("lat", 0.0),
-                    "lng": place_details.get("lng", 0.0),
-                    "photoUrl": place_details.get("photo_url"),  # Backend returns photo_url (snake_case)
-                    "rating": place_details.get("rating"),
-                })
-            else:
-                # Fallback if details fetch fails
+            # Get lat/lng from place details
+            details = await get_place_details(place_id)
+            if details:
                 results.append({
                     "place_id": place_id,
                     "name": pred.get("structured_formatting", {}).get("main_text", ""),
                     "address": pred.get("description", ""),
-                    "lat": 0.0,
-                    "lng": 0.0,
-                    "photoUrl": None,
-                    "rating": None,
+                    "lat": details.get("lat"),
+                    "lng": details.get("lng"),
+                    "rating": details.get("rating"),
+                    "photo_url": details.get("photo_url"),
                 })
         
         logger.info(f"✅ Found {len(results)} autocomplete results for '{query}'")

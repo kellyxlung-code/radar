@@ -25,7 +25,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Get API key from environment
-GOOGLE_API_KEY = os.getenv("GOOGLE_PLACES_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 
 def fetch_place_details_from_google(candidate: Dict) -> Optional[Dict]:
     """
@@ -59,7 +59,7 @@ def fetch_place_details_from_google(candidate: Dict) -> Optional[Dict]:
     """
     
     if not GOOGLE_API_KEY:
-        logger.error("❌ GOOGLE_PLACES_KEY not set in environment")
+        logger.error("❌ GOOGLE_PLACES_API_KEY not set in environment")
         return None
     
     # Step 1: Find the place using Text Search

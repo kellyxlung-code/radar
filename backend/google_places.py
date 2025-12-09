@@ -10,7 +10,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-GOOGLE_PLACES_KEY = os.getenv("GOOGLE_PLACES_KEY", "").strip()
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "").strip()
 
 # API endpoints
 PLACES_TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
@@ -23,8 +23,8 @@ async def search_place(name: str, district: str = None, region: str = "Hong Kong
     Search for a place using Google Places Text Search
     Returns the best matching place with basic info
     """
-    if not GOOGLE_PLACES_KEY:
-        logger.warning("⚠️ GOOGLE_PLACES_KEY not set. Place enrichment disabled.")
+    if not GOOGLE_PLACES_API_KEY:
+        logger.warning("⚠️ GOOGLE_PLACES_API_KEY not set. Place enrichment disabled.")
         return None
     
     # Build search query
@@ -41,7 +41,7 @@ async def search_place(name: str, district: str = None, region: str = "Hong Kong
                 PLACES_TEXT_SEARCH_URL,
                 params={
                     "query": query,
-                    "key": GOOGLE_PLACES_KEY,
+                    "key": GOOGLE_PLACES_API_KEY,
                     "region": "hk",  # Bias to Hong Kong
                 }
             )
@@ -80,7 +80,7 @@ async def get_place_details(place_id: str) -> Optional[Dict]:
     Get detailed information about a place
     Returns full place data including hours, phone, website
     """
-    if not GOOGLE_PLACES_KEY:
+    if not GOOGLE_PLACES_API_KEY:
         return None
     
     logger.info(f"📍 Fetching place details: {place_id}")
@@ -92,7 +92,7 @@ async def get_place_details(place_id: str) -> Optional[Dict]:
                 params={
                     "place_id": place_id,
                     "fields": "name,formatted_address,geometry,rating,price_level,opening_hours,formatted_phone_number,website,photos,types",
-                    "key": GOOGLE_PLACES_KEY,
+                    "key": GOOGLE_PLACES_API_KEY,
                 }
             )
             response.raise_for_status()
@@ -141,10 +141,10 @@ def get_photo_url(photo_reference: str, max_width: int = 800) -> str:
     """
     Generate Google Places photo URL
     """
-    if not GOOGLE_PLACES_KEY or not photo_reference:
+    if not GOOGLE_PLACES_API_KEY or not photo_reference:
         return None
     
-    return f"{PLACES_PHOTO_URL}?maxwidth={max_width}&photo_reference={photo_reference}&key={GOOGLE_PLACES_KEY}"
+    return f"{PLACES_PHOTO_URL}?maxwidth={max_width}&photo_reference={photo_reference}&key={GOOGLE_PLACES_API_KEY}"
 
 
 async def enrich_place_data(name: str, district: str = None) -> Optional[Dict]:

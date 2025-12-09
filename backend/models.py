@@ -88,7 +88,7 @@ class Place(Base):
 
 # Category to Emoji mapping (Corner-style)
 CATEGORY_EMOJIS = {
-    "eat": "🍜",           # Restaurants
+    "eat": "🍽️",           # Restaurants
     "cafes": "☕",         # Cafes
     "bars": "🍸",          # Bars & nightlife
     "shops": "🛍️",        # Shopping
@@ -109,49 +109,53 @@ def get_emoji_for_category(category: str) -> str:
 
 def get_category_from_tags(tags: list) -> str:
     """
-    Determine category from AI-extracted tags
-    Similar to how Corner categorizes places
+    Determine category from Google Places types or AI-extracted tags
+    Matches Google Places API type strings
     """
+    if not tags:
+        return "eat"  # Default
+    
     tags_lower = [t.lower() for t in tags]
     
-    # Cafes
-    if any(word in tags_lower for word in ["cafe", "coffee", "espresso", "latte", "cappuccino"]):
+    # Cafes (Google Places: "cafe", "coffee_shop")
+    if any(word in tags_lower for word in ["cafe", "coffee", "espresso", "latte", "cappuccino", "coffee_shop"]):
         return "cafes"
     
-    # Bars
-    if any(word in tags_lower for word in ["bar", "cocktail", "wine", "beer", "pub", "nightlife"]):
+    # Bars (Google Places: "bar", "night_club", "liquor_store")
+    if any(word in tags_lower for word in ["bar", "cocktail", "wine", "beer", "pub", "nightlife", "night_club", "liquor_store"]):
         return "bars"
     
-    # Restaurants
-    if any(word in tags_lower for word in ["restaurant", "dining", "food", "cuisine", "noodles", "dim sum"]):
-        return "eat"
-    
-    # Shops
-    if any(word in tags_lower for word in ["shop", "store", "boutique", "retail", "shopping"]):
+    # Shops (Google Places: "store", "clothing_store", "shopping_mall")
+    if any(word in tags_lower for word in ["shop", "store", "boutique", "retail", "shopping", "clothing_store", "shopping_mall", "book_store", "jewelry_store"]):
         return "shops"
     
-    # Leisure
-    if any(word in tags_lower for word in ["cinema", "theater", "entertainment", "activity", "fun"]):
+    # Leisure (Google Places: "movie_theater", "amusement_park", "bowling_alley")
+    if any(word in tags_lower for word in ["cinema", "theater", "entertainment", "activity", "fun", "movie_theater", "amusement_park", "bowling_alley", "casino", "stadium"]):
         return "leisure"
     
-    # Go out
-    if any(word in tags_lower for word in ["event", "party", "club", "experience", "rooftop"]):
+    # Go out (Google Places: "night_club", "tourist_attraction")
+    if any(word in tags_lower for word in ["event", "party", "club", "experience", "rooftop", "tourist_attraction"]):
         return "go_out"
     
-    # Nature
-    if any(word in tags_lower for word in ["park", "nature", "hiking", "beach", "outdoor"]):
+    # Nature (Google Places: "park", "natural_feature", "campground")
+    if any(word in tags_lower for word in ["park", "nature", "hiking", "beach", "outdoor", "natural_feature", "campground"]):
         return "nature"
     
-    # Culture
-    if any(word in tags_lower for word in ["museum", "gallery", "art", "culture", "exhibition"]):
+    # Culture (Google Places: "museum", "art_gallery", "library")
+    if any(word in tags_lower for word in ["museum", "gallery", "art", "culture", "exhibition", "art_gallery", "library"]):
         return "culture"
+    
+    # Restaurants (Google Places: "restaurant", "meal_delivery", "meal_takeaway")
+    # Check restaurants LAST because many places have "restaurant" as a secondary type
+    if any(word in tags_lower for word in ["restaurant", "dining", "food", "cuisine", "noodles", "dim sum", "meal_delivery", "meal_takeaway"]):
+        return "eat"
     
     # Default to eat (most common)
     return "eat"
 
 
 class Event(Base):
-    """Event model - happenings in Hong Kong"""
+    """Event model - curated Hong Kong events"""
     __tablename__ = "events"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -162,23 +166,19 @@ class Event(Base):
     photo_url = Column(String)
     
     # Location
-    location = Column(String)
+    location = Column(String)  # Venue name
     district = Column(String, index=True)
-    lat = Column(Float)
-    lng = Column(Float)
     
-    # Dates
-    start_date = Column(DateTime, nullable=False, index=True)
-    end_date = Column(DateTime, nullable=False, index=True)
+    # Timing
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    time_description = Column(String)  # "Tonight", "This Weekend", "Next Week"
     
     # Category
-    category = Column(String, index=True)  # art, music, food, nightlife, culture, market
+    category = Column(String, index=True)  # market, music, food, culture, sports
     
-    # External link
+    # Links
     url = Column(String)
-    
-    # Status
-    is_active = Column(Boolean, default=True, index=True)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -17,14 +17,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, desc
+from datetime import datetime, timedelta
 
 # Local imports
 from database import init_db, get_db
-from models import User, Place, get_emoji_for_category, get_category_from_tags
+from models import User, Place, Event, get_emoji_for_category, get_category_from_tags
 from auth import send_otp, verify_otp, get_current_user, MVP_MODE
 from google_places import enrich_place_data, extract_district_from_address
-from ai_extraction import process_instagram_url, extract_place_manual, detect_category
+from ai_extraction import process_instagram_url, extract_place_manual
 from google_places_autocomplete import autocomplete_search, get_place_details
 
 # Logging
@@ -118,6 +119,9 @@ class PlaceResponse(BaseModel):
     emoji: str
     photo_url: Optional[str]
     rating: Optional[float]
+    opening_hours: Optional[dict] = None  # {"weekday_text": [...], "open_now": bool}
+    is_open_now: Optional[bool] = None
+    place_id: Optional[str] = None  # Google place_id for fetching more photos
     is_visited: bool
     is_favorite: bool
     tags: Optional[List[str]]
@@ -126,6 +130,50 @@ class PlaceResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+def place_to_response(place) -> PlaceResponse:
+    """Helper to convert Place model to PlaceResponse"""
+    # Parse opening_hours JSON if exists
+    opening_hours_dict = None
+    is_open = None
+    
+    if place.opening_hours:
+        import json
+        if isinstance(place.opening_hours, str):
+            try:
+                weekday_text = json.loads(place.opening_hours)
+                opening_hours_dict = {"weekday_text": weekday_text}
+            except:
+                pass
+        elif isinstance(place.opening_hours, dict):
+            opening_hours_dict = place.opening_hours
+        elif isinstance(place.opening_hours, list):
+            opening_hours_dict = {"weekday_text": place.opening_hours}
+    
+    # Check if open now (would need to be stored separately or calculated)
+    # For now, just return None
+    
+    return PlaceResponse(
+        id=place.id,
+        name=place.name,
+        address=place.address,
+        district=place.district,
+        lat=place.lat,
+        lng=place.lng,
+        category=place.category,
+        emoji=place.emoji,
+        photo_url=place.photo_url,
+        rating=place.rating,
+        opening_hours=opening_hours_dict,
+        is_open_now=is_open,
+        place_id=place.google_place_id,
+        is_visited=place.is_visited,
+        is_favorite=place.is_favorite,
+        tags=place.tags,
+        source_url=place.source_url,
+        created_at=place.created_at.isoformat(),
+    )
 
 
 # ============================================================================
@@ -218,148 +266,58 @@ async def import_url(
         )
     
     # Step 3: Merge data
-    # Determine category using AI
+    # Determine category and emoji
     tags = ai_data.get("tags", [])
-    description = ai_data.get("source_caption", "") or google_data.get("address", "")
-    category = detect_category(google_data.get("name"), description)
+    category = ai_data.get("category") or get_category_from_tags(tags)
     emoji = get_emoji_for_category(category)
     
     # Extract district from Google address if not from AI
     if not district and google_data.get("address"):
         district = extract_district_from_address(google_data["address"])
     
-    # Step 4: Save to database
-    place = Place(
-        user_id=current_user.id,
-        name=google_data.get("name"),
-        address=google_data.get("address"),
-        district=district,
-        lat=google_data.get("lat"),
-        lng=google_data.get("lng"),
-        google_place_id=google_data.get("place_id"),
-        photo_url=google_data.get("photo_url"),
-        rating=google_data.get("rating"),
-        price_level=google_data.get("price_level"),
-        opening_hours=google_data.get("opening_hours"),
-        phone=google_data.get("phone"),
-        website=google_data.get("website"),
-        category=category,
-        emoji=emoji,
-        source_platform=ai_data.get("source_platform"),
-        source_url=url,
-        source_caption=ai_data.get("source_caption"),
-        tags=tags,
-    )
-    
-    db.add(place)
-    await db.commit()
-    await db.refresh(place)
-    
-    logger.info(f"✅ Saved place: {place.name} ({place.emoji})")
-    
-    return PlaceResponse(
-        id=place.id,
-        name=place.name,
-        address=place.address,
-        district=place.district,
-        lat=place.lat,
-        lng=place.lng,
-        category=place.category,
-        emoji=place.emoji,
-        photo_url=place.photo_url,
-        rating=place.rating,
-        is_visited=place.is_visited,
-        is_favorite=place.is_favorite,
-        tags=place.tags,
-        source_url=place.source_url,
-        created_at=place.created_at.isoformat(),
-    )
-
-
-# ============================================================================
-# Extract Places Endpoint (Multi-place import for home screen)
-# ============================================================================
-
-class ExtractPlacesRequest(BaseModel):
-    url: str = Field(..., example="https://www.instagram.com/p/xxx")
-
-class GooglePlaceResult(BaseModel):
-    place_id: str
-    name: str
-    address: str
-    lat: float
-    lng: float
-    rating: Optional[float]
-    photoUrl: Optional[str]
-    is_saved: bool = False
-
-class ExtractPlacesResponse(BaseModel):
-    places: List[GooglePlaceResult]
-
-@app.post("/extract-places", response_model=ExtractPlacesResponse)
-async def extract_places(
-    request: ExtractPlacesRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Extract MULTIPLE places from any URL (Instagram, blog, website)
-    Returns list of places (NOT saved yet) for user selection
-    """
-    from ai_extraction import extract_multiple_places_from_url
-    
-    url = request.url
-    logger.info(f"🔍 Extracting places from: {url}")
-    
-    # Step 1: Extract all places from URL using AI
-    places_data = await extract_multiple_places_from_url(url)
-    
-    if not places_data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Could not extract any places from URL"
+    # Step 4: Check if place already exists for this user
+    google_place_id = google_data.get("place_id")
+    existing_place = await db.execute(
+        select(Place).where(
+            Place.user_id == current_user.id,
+            Place.google_place_id == google_place_id
         )
+    )
+    place = existing_place.scalar_one_or_none()
     
-    # Step 2: Enrich each place with Google Places data
-    enriched_places = []
-    for place_data in places_data:
-        name = place_data.get("name")
-        district = place_data.get("district")
+    if place:
+        # Place already exists, return it
+        logger.info(f"✅ Place already exists: {place.name} ({place.emoji})")
+    else:
+        # Create new place
+        place = Place(
+            user_id=current_user.id,
+            name=google_data.get("name"),
+            address=google_data.get("address"),
+            district=district,
+            lat=google_data.get("lat"),
+            lng=google_data.get("lng"),
+            google_place_id=google_place_id,
+            photo_url=google_data.get("photo_url"),
+            rating=google_data.get("rating"),
+            price_level=google_data.get("price_level"),
+            opening_hours=google_data.get("opening_hours"),
+            phone=google_data.get("phone"),
+            website=google_data.get("website"),
+            category=category,
+            emoji=emoji,
+            source_platform=ai_data.get("source_platform"),
+            source_url=url,
+            source_caption=ai_data.get("source_caption"),
+            tags=tags,
+        )
         
-        google_data = await enrich_place_data(name, district)
-        if google_data:
-            enriched_places.append(google_data)
+        db.add(place)
+        await db.commit()
+        await db.refresh(place)
+        logger.info(f"✅ Saved new place: {place.name} ({place.emoji})")
     
-    if not enriched_places:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Could not find any of the extracted places on Google Places"
-        )
-    
-    # Step 3: Check which places are already saved by user
-    saved_place_ids = set()
-    result = await db.execute(
-        select(Place.google_place_id).where(Place.user_id == current_user.id)
-    )
-    saved_place_ids = {pid for (pid,) in result.fetchall() if pid}
-    
-    # Step 4: Build response with is_saved flag
-    response_places = []
-    for place in enriched_places:
-        response_places.append(GooglePlaceResult(
-            place_id=place["place_id"],
-            name=place["name"],
-            address=place["address"],
-            lat=place["lat"],
-            lng=place["lng"],
-            rating=place.get("rating"),
-            photoUrl=place.get("photo_url"),
-            is_saved=place["place_id"] in saved_place_ids
-        ))
-    
-    logger.info(f"✅ Extracted {len(response_places)} place(s)")
-    
-    return ExtractPlacesResponse(places=response_places)
+    return place_to_response(place)
 
 
 # ============================================================================
@@ -423,23 +381,7 @@ async def pin_place(
     
     logger.info(f"✅ Pinned place: {place.name} ({place.emoji})")
     
-    return PlaceResponse(
-        id=place.id,
-        name=place.name,
-        address=place.address,
-        district=place.district,
-        lat=place.lat,
-        lng=place.lng,
-        category=place.category,
-        emoji=place.emoji,
-        photo_url=place.photo_url,
-        rating=place.rating,
-        is_visited=place.is_visited,
-        is_favorite=place.is_favorite,
-        tags=place.tags,
-        source_url=place.source_url,
-        created_at=place.created_at.isoformat(),
-    )
+    return place_to_response(place)
 
 
 # ============================================================================
@@ -476,26 +418,7 @@ async def get_places(
     result = await db.execute(query)
     places = result.scalars().all()
     
-    return [
-        PlaceResponse(
-            id=p.id,
-            name=p.name,
-            address=p.address,
-            district=p.district,
-            lat=p.lat,
-            lng=p.lng,
-            category=p.category,
-            emoji=p.emoji,
-            photo_url=p.photo_url,
-            rating=p.rating,
-            is_visited=p.is_visited,
-            is_favorite=p.is_favorite,
-            tags=p.tags,
-            source_url=p.source_url,
-            created_at=p.created_at.isoformat(),
-        )
-        for p in places
-    ]
+    return [place_to_response(p) for p in places]
 
 
 @app.get("/places/{place_id}", response_model=PlaceResponse)
@@ -518,23 +441,7 @@ async def get_place(
             detail="Place not found"
         )
     
-    return PlaceResponse(
-        id=place.id,
-        name=place.name,
-        address=place.address,
-        district=place.district,
-        lat=place.lat,
-        lng=place.lng,
-        category=place.category,
-        emoji=place.emoji,
-        photo_url=place.photo_url,
-        rating=place.rating,
-        is_visited=place.is_visited,
-        is_favorite=place.is_favorite,
-        tags=place.tags,
-        source_url=place.source_url,
-        created_at=place.created_at.isoformat(),
-    )
+    return place_to_response(place)
 
 
 @app.patch("/places/{place_id}", response_model=PlaceResponse)
@@ -571,23 +478,7 @@ async def update_place(
     await db.commit()
     await db.refresh(place)
     
-    return PlaceResponse(
-        id=place.id,
-        name=place.name,
-        address=place.address,
-        district=place.district,
-        lat=place.lat,
-        lng=place.lng,
-        category=place.category,
-        emoji=place.emoji,
-        photo_url=place.photo_url,
-        rating=place.rating,
-        is_visited=place.is_visited,
-        is_favorite=place.is_favorite,
-        tags=place.tags,
-        source_url=place.source_url,
-        created_at=place.created_at.isoformat(),
-    )
+    return place_to_response(place)
 
 
 @app.delete("/places/{place_id}")
@@ -652,9 +543,13 @@ async def search_places(
     return {"results": results}
 
 
+class AddPlaceByIdRequest(BaseModel):
+    place_id: str = Field(..., example="ChIJXxYxZ...")
+
+
 @app.post("/add-place-by-id")
 async def add_place_by_id(
-    place_id: str,
+    request: AddPlaceByIdRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -663,17 +558,16 @@ async def add_place_by_id(
     Returns full place data.
     """
     # Get place details from Google
-    google_data = await get_place_details(place_id)
+    google_data = await get_place_details(request.place_id)
     if not google_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Could not find place details"
         )
     
-    # Determine category using AI
+    # Determine category from types
     types = google_data.get("types", [])
-    description = google_data.get("address", "")
-    category = detect_category(google_data.get("name"), description)
+    category = get_category_from_tags(types)
     emoji = get_emoji_for_category(category)
     
     # Extract district
@@ -687,7 +581,7 @@ async def add_place_by_id(
         district=district,
         lat=google_data.get("lat"),
         lng=google_data.get("lng"),
-        google_place_id=place_id,
+        google_place_id=request.place_id,
         photo_url=google_data.get("photo_url"),
         rating=google_data.get("rating"),
         price_level=google_data.get("price_level"),
@@ -705,23 +599,322 @@ async def add_place_by_id(
     
     logger.info(f"✅ Added place by ID: {place.name} ({place.emoji})")
     
-    return PlaceResponse(
-        id=place.id,
-        name=place.name,
-        address=place.address,
-        district=place.district,
-        lat=place.lat,
-        lng=place.lng,
-        category=place.category,
-        emoji=place.emoji,
-        photo_url=place.photo_url,
-        rating=place.rating,
-        is_visited=place.is_visited,
-        is_favorite=place.is_favorite,
-        tags=place.tags,
-        source_url=None,
-        created_at=place.created_at.isoformat(),
+    return place_to_response(place)
+
+
+# ============================================================================
+# Events Endpoint (For Home Screen)
+# ============================================================================
+
+@app.get("/events")
+async def get_events(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get curated Hong Kong events happening now or soon.
+    Manually curated from Lifestyle Asia HK.
+    """
+    # Get events happening now or in the future
+    now = datetime.utcnow()
+    result = await db.execute(
+        select(Event)
+        .where(Event.end_date >= now)
+        .order_by(Event.start_date)
+        .limit(10)
     )
+    events = result.scalars().all()
+    
+    return [
+        {
+            "id": event.id,
+            "name": event.name,
+            "description": event.description,
+            "photo_url": event.photo_url,
+            "location": event.location,
+            "district": event.district,
+            "start_date": event.start_date.isoformat(),
+            "end_date": event.end_date.isoformat(),
+            "category": event.category,
+            "url": event.url,
+            "time_description": event.time_description
+        }
+        for event in events
+    ]
+
+
+# ============================================================================
+# Trending Endpoint (For Home Screen)
+# ============================================================================
+
+@app.get("/trending")
+async def get_trending(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get trending places based on velocity algorithm:
+    - Recent saves (last 7 days) × 2
+    - Medium-term saves (last 30 days) × 0.5
+    """
+    # Get all places with save counts
+    result = await db.execute(
+        select(Place)
+        .order_by(desc(Place.created_at))
+    )
+    all_places = result.scalars().all()
+    
+    # Calculate trending scores
+    now = datetime.utcnow()
+    seven_days_ago = now - timedelta(days=7)
+    thirty_days_ago = now - timedelta(days=30)
+    
+    trending_data = []
+    for place in all_places:
+        # Count saves in different time windows
+        result_7d = await db.execute(
+            select(Place)
+            .where(
+                and_(
+                    Place.google_place_id == place.google_place_id,
+                    Place.created_at >= seven_days_ago
+                )
+            )
+        )
+        saves_7d = len(result_7d.scalars().all())
+        
+        result_30d = await db.execute(
+            select(Place)
+            .where(
+                and_(
+                    Place.google_place_id == place.google_place_id,
+                    Place.created_at >= thirty_days_ago
+                )
+            )
+        )
+        saves_30d = len(result_30d.scalars().all())
+        
+        # Calculate trending score
+        score = (saves_7d * 2) + (saves_30d * 0.5)
+        
+        if score > 0:
+            trending_data.append({
+                "place": place,
+                "score": score,
+                "saves_7d": saves_7d,
+                "saves_30d": saves_30d
+            })
+    
+    # Get user's saved place IDs to exclude them
+    user_places_result = await db.execute(
+        select(Place.google_place_id)
+        .where(Place.user_id == current_user.id)
+    )
+    user_saved_place_ids = set(row[0] for row in user_places_result.all())
+    
+    # Check if there are places from other users
+    other_users_places = [
+        item for item in trending_data 
+        if item["place"].user_id != current_user.id
+    ]
+    
+    # If there are places from other users, exclude user's saved places
+    # Otherwise, show user's own places (single-user case)
+    if other_users_places:
+        trending_data_filtered = [
+            item for item in trending_data 
+            if item["place"].google_place_id not in user_saved_place_ids
+        ]
+    else:
+        trending_data_filtered = trending_data
+    
+    # Sort by score and take top 10
+    trending_data_filtered.sort(key=lambda x: x["score"], reverse=True)
+    top_trending = trending_data_filtered[:10]
+    
+    return [
+        {
+            "id": item["place"].id,
+            "name": item["place"].name,
+            "address": item["place"].address,
+            "district": item["place"].district,
+            "lat": item["place"].lat,
+            "lng": item["place"].lng,
+            "category": item["place"].category,
+            "emoji": item["place"].emoji,
+            "photo_url": item["place"].photo_url,
+            "rating": item["place"].rating,
+            "total_saves": item["saves_30d"],
+            "recent_saves": item["saves_7d"],
+            "trending_score": item["score"]
+        }
+        for item in top_trending
+    ]
+
+
+# ============================================================================
+# Picked For You Endpoint (For Home Screen)
+# ============================================================================
+
+@app.get("/picked-for-you")
+async def get_picked_for_you(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get AI-recommended places the user hasn't saved yet.
+    Uses collaborative filtering based on what similar users have saved.
+    """
+    # Get all places the current user has saved
+    user_places_result = await db.execute(
+        select(Place.google_place_id)
+        .where(Place.user_id == current_user.id)
+    )
+    user_saved_place_ids = set(row[0] for row in user_places_result.all())
+    
+    # Get all places from other users that current user hasn't saved
+    all_places_result = await db.execute(
+        select(Place)
+        .where(Place.user_id != current_user.id)
+        .order_by(desc(Place.created_at))
+    )
+    other_users_places = all_places_result.scalars().all()
+    
+    # If no other users exist, get user's own places
+    if not other_users_places:
+        user_places_result = await db.execute(
+            select(Place)
+            .where(Place.user_id == current_user.id)
+            .order_by(desc(Place.created_at))
+            .limit(10)
+        )
+        recommended_places = user_places_result.scalars().all()
+    else:
+        # Filter out places user has already saved
+        recommended_places = []
+        seen_google_ids = set()
+        
+        for place in other_users_places:
+            if place.google_place_id not in user_saved_place_ids and place.google_place_id not in seen_google_ids:
+                recommended_places.append(place)
+                seen_google_ids.add(place.google_place_id)
+                
+                if len(recommended_places) >= 10:
+                    break
+    
+    return [
+        {
+            "id": place.id,
+            "name": place.name,
+            "address": place.address,
+            "district": place.district,
+            "lat": place.lat,
+            "lng": place.lng,
+            "category": place.category,
+            "emoji": place.emoji,
+            "photo_url": place.photo_url,
+            "rating": place.rating,
+            "google_place_id": place.google_place_id
+        }
+        for place in recommended_places
+    ]
+
+
+# ============================================================================
+# Support Local Endpoint (For Home Screen)
+# ============================================================================
+
+@app.get("/support-local")
+async def get_support_local(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get independent/family-owned businesses.
+    For MVP, return places tagged with 'local', 'independent', 'family-owned'.
+    """
+    result = await db.execute(
+        select(Place)
+        .order_by(desc(Place.created_at))
+        .limit(50)
+    )
+    places = result.scalars().all()
+    
+    # Get user's saved place IDs to exclude them
+    user_places_result = await db.execute(
+        select(Place.google_place_id)
+        .where(Place.user_id == current_user.id)
+    )
+    user_saved_place_ids = set(row[0] for row in user_places_result.all())
+    
+    # Check if there are places from other users
+    other_users_places = [p for p in places if p.user_id != current_user.id]
+    
+    # Filter places with local-related tags
+    local_places = []
+    for place in places:
+        # If there are other users, exclude user's saved places; otherwise include them
+        if other_users_places:
+            if place.google_place_id in user_saved_place_ids:
+                continue
+        
+        if place.tags:
+            tags_lower = [t.lower() for t in place.tags]
+            if any(word in tags_lower for word in ['local', 'independent', 'family', 'small', 'neighborhood']):
+                local_places.append(place)
+    
+    return [
+        {
+            "id": place.id,
+            "name": place.name,
+            "address": place.address,
+            "district": place.district,
+            "lat": place.lat,
+            "lng": place.lng,
+            "category": place.category,
+            "emoji": place.emoji,
+            "photo_url": place.photo_url,
+            "rating": place.rating,
+            "tags": place.tags
+        }
+        for place in local_places[:10]
+    ]
+
+
+# ============================================================================
+# Friend Taste Match Endpoint (For Home Screen)
+# ============================================================================
+
+@app.get("/friend-taste-match")
+async def get_friend_taste_match(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Calculate taste match percentage with friends.
+    For MVP, return mock data with simplified format.
+    """
+    # TODO: Implement real friend matching logic
+    # For now, return mock data
+    return [
+        {
+            "friend_id": 1,
+            "friend_name": "Sarah",
+            "match_percentage": 87,
+            "mutual_places": 12
+        },
+        {
+            "friend_id": 2,
+            "friend_name": "Mike",
+            "match_percentage": 76,
+            "mutual_places": 8
+        },
+        {
+            "friend_id": 3,
+            "friend_name": "Emma",
+            "match_percentage": 65,
+            "mutual_places": 5
+        }
+    ]
 
 
 # ============================================================================
@@ -735,60 +928,33 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 async def chat(
     request: ChatRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user)
 ):
     """
     AI chat endpoint for place recommendations and questions.
     Uses OpenAI to provide intelligent responses about Hong Kong places.
     """
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        
-        # Fetch user's pinned places for personalization
-        user_places = await db.execute(
-            select(Place).where(Place.user_id == current_user.id)
+        from openai import AzureOpenAI
+        client = AzureOpenAI(
+            api_key=os.getenv("AZURE_OPENAI_KEY"),
+            api_version="2024-10-21",
+            azure_endpoint="https://hkust.azure-api.net"
         )
-        pinned_places = user_places.scalars().all()
-        
-        # Build user preferences context
-        user_context = ""
-        if pinned_places:
-            place_list = []
-            for p in pinned_places[:20]:  # Limit to 20 most recent
-                place_list.append(f"- {p.name} ({p.address})")
-            user_context = (
-                "\n\nUSER'S SAVED PLACES (use this to understand their preferences):\n"
-                + "\n".join(place_list) +
-                "\n\nPERSONALIZATION INSTRUCTIONS:\n"
-                "- Look at the user's saved places to understand their vibe and preferences\n"
-                "- When they ask for recommendations, suggest places from their saved list if relevant\n"
-                "- If you recommend a place they already saved, mention it like 'oh you already have this one saved!'\n"
-                "- Learn from their saved spots - if they have lots of cafes in Sheung Wan, they probably like that area/vibe\n"
-                "- Be personal and reference their taste when making suggestions\n"
-                "- Keep it casual and Gen Z - no formal language"
-            )
         
         # Build messages for OpenAI
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "You are Radar's AI assistant, an expert on Hong Kong restaurants, cafes, bars, and venues. "
-                    "You help users discover amazing places to eat, drink, and hang out in Hong Kong. "
-                    "Be friendly, concise, and enthusiastic. "
-                    "\n\nIMPORTANT LOCATION CONTEXT:\n"
-                    "- HKUST = Hong Kong University of Science and Technology in Clear Water Bay (Sai Kung District)\n"
-                    "- HKU = University of Hong Kong in Pok Fu Lam (Western District)\n"
-                    "- CUHK = Chinese University of Hong Kong in Sha Tin (New Territories)\n"
-                    "- When users mention universities or specific areas, recommend places NEAR that location, not across the city.\n"
-                    "- Pay close attention to the specific location/district mentioned in the query.\n"
-                    "- If a user asks for places at/near HKUST, recommend places in Clear Water Bay, Sai Kung, or nearby areas.\n"
-                    "- If a user asks for Central, recommend Central places, not Tsim Sha Tsui.\n"
-                    "\nIf asked about places, provide specific recommendations with exact district names. "
-                    "Keep responses under 150 words."
-                ) + user_context
+                    "You are Radar's AI assistant helping users find cool spots in Hong Kong. "
+                    "Your tone is casual, friendly, and Gen Z but not over the top - no excessive slang. "
+                    "Use emojis sparingly (✨ ☕️ 🍝 🔥 occasionally). "
+                    "When recommending places, respond with ONLY place names separated by | like this: "
+                    "'Carbone Hong Kong|% Arabica|NOC Coffee' "
+                    "If not recommending specific places, just give a helpful text response. "
+                    "Keep responses under 100 words."
+                )
             }
         ]
         
@@ -799,9 +965,9 @@ async def chat(
         # Add current message
         messages.append({"role": "user", "content": request.message})
         
-        # Call OpenAI
+        # Call Azure OpenAI
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4o-mini",  # This is the Azure deployment name
             messages=messages,
             temperature=0.7,
             max_tokens=200
@@ -811,7 +977,38 @@ async def chat(
         
         logger.info(f"💬 Chat: {request.message[:50]}... → {ai_response[:50]}...")
         
-        return {"response": ai_response}
+        # Check if AI is recommending places (contains | separator)
+        places_data = []
+        if "|" in ai_response:
+            # Extract place names
+            place_names = [name.strip() for name in ai_response.split("|")]
+            
+            # Search for each place using Google Places
+            from google_places_autocomplete import autocomplete_search
+            for place_name in place_names[:5]:  # Max 5 places
+                try:
+                    results = await autocomplete_search(place_name, location="22.3193,114.1694")
+                    if results:
+                        # Take the first (best) result
+                        places_data.append(results[0])
+                except Exception as e:
+                    logger.error(f"❌ Failed to search place '{place_name}': {e}")
+                    continue
+            
+            # Create a friendly intro message
+            intro_messages = [
+                "here are some solid spots for you",
+                "check these out",
+                "here's what i found",
+                "these places are pretty good"
+            ]
+            import random
+            ai_response = random.choice(intro_messages)
+        
+        return {
+            "response": ai_response,
+            "places": places_data  # Array of place objects with photos, ratings, etc.
+        }
         
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
@@ -822,206 +1019,97 @@ async def chat(
 
 
 # ============================================================================
-# EVENTS & TRENDING ENDPOINTS
+# ADMIN ENDPOINTS (Temporary)
 # ============================================================================
 
-from models import Event
-from datetime import timedelta
-
-class EventResponse(BaseModel):
-    id: int
-    name: str
-    description: Optional[str]
-    photo_url: Optional[str]
-    location: Optional[str]
-    district: Optional[str]
-    start_date: str
-    end_date: str
-    category: Optional[str]
-    url: Optional[str]
-    time_description: str
-
-@app.get("/events", response_model=List[EventResponse])
-async def get_events(
-    db: AsyncSession = Depends(get_db)
-):
-    """Get current and upcoming events in Hong Kong"""
-    from datetime import datetime
-    
-    result = await db.execute(
-        select(Event).where(
-            and_(
-                Event.end_date >= datetime.now(),
-                Event.is_active == True
-            )
-        ).order_by(Event.start_date.asc()).limit(20)
-    )
-    events = result.scalars().all()
-    
-    def format_time_description(start, end):
-        now = datetime.now()
+@app.post("/admin/backfill")
+async def run_backfill(db: AsyncSession = Depends(get_db)):
+    """
+    Temporary endpoint to run backfill script for opening hours.
+    This will be removed after running once.
+    """
+    try:
+        from google_places_helper import _get_place_details
+        import json
         
-        if start.date() == now.date():
-            return "Tonight"
-        elif start.date() == (now + timedelta(days=1)).date():
-            return "Tomorrow"
-        elif start.date() <= (now + timedelta(days=7)).date():
-            if start.weekday() >= 5:
-                return "This Weekend"
-            else:
-                return start.strftime("%A")
-        elif start.date() <= (now + timedelta(days=14)).date():
-            return "Next Week"
-        else:
-            return start.strftime("%b %d")
-    
-    return [
-        EventResponse(
-            id=e.id,
-            name=e.name,
-            description=e.description,
-            photo_url=e.photo_url,
-            location=e.location,
-            district=e.district,
-            start_date=e.start_date.isoformat(),
-            end_date=e.end_date.isoformat(),
-            category=e.category,
-            url=e.url,
-            time_description=format_time_description(e.start_date, e.end_date)
+        # Get all places
+        result = await db.execute(select(Place))
+        places = result.scalars().all()
+        
+        logger.info(f"📊 Found {len(places)} places to check")
+        
+        updated_count = 0
+        failed_count = 0
+        skipped_count = 0
+        results = []
+        
+        for place in places:
+            # Check if missing data
+            needs_update = False
+            
+            if not place.opening_hours:
+                logger.info(f"⚠️ {place.name} missing opening_hours")
+                needs_update = True
+            
+            if not needs_update:
+                logger.info(f"✅ {place.name} has complete data")
+                skipped_count += 1
+                continue
+            
+            # Fetch fresh data from Google
+            if not place.google_place_id:
+                logger.warning(f"⚠️ {place.name} has no google_place_id, skipping")
+                failed_count += 1
+                results.append({"place": place.name, "status": "failed", "reason": "no google_place_id"})
+                continue
+            
+            logger.info(f"🔄 Fetching fresh data for {place.name}...")
+            
+            place_details = _get_place_details(place.google_place_id)
+            
+            if not place_details:
+                logger.error(f"❌ Failed to fetch data for {place.name}")
+                failed_count += 1
+                results.append({"place": place.name, "status": "failed", "reason": "api error"})
+                continue
+            
+            # Update opening hours
+            if not place.opening_hours:
+                opening_hours_data = place_details.get("opening_hours", {})
+                if opening_hours_data:
+                    weekday_text = opening_hours_data.get("weekday_text", [])
+                    if weekday_text:
+                        place.opening_hours = json.dumps(weekday_text)
+                        logger.info(f"  ✅ Added opening_hours")
+                        results.append({"place": place.name, "status": "updated", "added": "opening_hours"})
+            
+            updated_count += 1
+        
+        # Commit all changes
+        await db.commit()
+        
+        summary = {
+            "total": len(places),
+            "updated": updated_count,
+            "failed": failed_count,
+            "skipped": skipped_count,
+            "details": results
+        }
+        
+        logger.info(f"\n🎉 Backfill complete!")
+        logger.info(f"  ✅ Updated: {updated_count}")
+        logger.info(f"  ❌ Failed: {failed_count}")
+        logger.info(f"  ⏭️ Skipped: {skipped_count}")
+        logger.info(f"  📊 Total: {len(places)}")
+        
+        return summary
+        
+    except Exception as e:
+        logger.error(f"❌ Backfill error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Backfill failed: {str(e)}"
         )
-        for e in events
-    ]
-
-
-class TrendingPlaceResponse(BaseModel):
-    id: int
-    name: str
-    district: Optional[str]
-    category: Optional[str]
-    emoji: str
-    photo_url: Optional[str]
-    lat: float
-    lng: float
-    rating: Optional[float]
-    saves_this_week: int
-    total_saves: int
-
-@app.get("/trending", response_model=List[TrendingPlaceResponse])
-async def get_trending_places(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get trending places based on save velocity"""
-    from datetime import datetime, timedelta
-    from sqlalchemy import func, case
-    
-    # Get all places with save counts
-    week_ago = datetime.now() - timedelta(days=7)
-    
-    # Subquery to count saves per place
-    result = await db.execute(
-        select(
-            Place,
-            func.count(Place.id).label('total_saves')
-        ).where(
-            Place.created_at > week_ago
-        ).group_by(Place.id).order_by(
-            func.count(Place.id).desc()
-        ).limit(20)
-    )
-    
-    trending_data = result.all()
-    
-    return [
-        TrendingPlaceResponse(
-            id=place.id,
-            name=place.name,
-            district=place.district,
-            category=place.category,
-            emoji=place.emoji,
-            photo_url=place.photo_url,
-            lat=place.lat,
-            lng=place.lng,
-            rating=place.rating,
-            saves_this_week=count,
-            total_saves=count
-        )
-        for place, count in trending_data
-    ]
-
-
-class SupportLocalPlaceResponse(BaseModel):
-    id: int
-    name: str
-    district: Optional[str]
-    category: Optional[str]
-    emoji: str
-    photo_url: Optional[str]
-    lat: float
-    lng: float
-    rating: Optional[float]
-    established_year: Optional[int]
-    is_independent: bool
-
-@app.get("/support-local", response_model=List[SupportLocalPlaceResponse])
-async def get_support_local_places(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get independent/local businesses to support"""
-    # For now, return places with certain tags
-    # Later: add established_year and is_independent fields to Place model
-    
-    result = await db.execute(
-        select(Place).where(
-            Place.user_id == current_user.id
-        ).order_by(Place.created_at.desc()).limit(20)
-    )
-    places = result.scalars().all()
-    
-    # Filter for local/independent (check tags or name patterns)
-    local_places = [
-        p for p in places
-        if p.tags and any(
-            tag.lower() in ['local', 'independent', 'family-owned', 'heritage']
-            for tag in p.tags
-        )
-    ]
-    
-    return [
-        SupportLocalPlaceResponse(
-            id=p.id,
-            name=p.name,
-            district=p.district,
-            category=p.category,
-            emoji=p.emoji,
-            photo_url=p.photo_url,
-            lat=p.lat,
-            lng=p.lng,
-            rating=p.rating,
-            established_year=None,  # TODO: add to model
-            is_independent=True
-        )
-        for p in local_places[:20]
-    ]
-
-
-class FriendTasteMatchResponse(BaseModel):
-    friend_id: int
-    friend_name: str
-    friend_phone: str
-    match_percentage: int
-    shared_places_count: int
-
-@app.get("/friend-taste-match", response_model=List[FriendTasteMatchResponse])
-async def get_friend_taste_match(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get friends with similar taste (placeholder for now)"""
-    # TODO: Implement friends system and taste matching algorithm
-    # For now, return empty list
-    return []
 
 
 # ============================================================================

@@ -8,14 +8,19 @@ import logging
 import json
 from typing import Optional, Dict, List
 import httpx
-from openai import OpenAI
+from openai import AzureOpenAI
 import re
+from ai_extraction_helpers import extract_district
 
 logger = logging.getLogger(__name__)
 
-# OpenAI Configuration (uses OPENAI_API_KEY from environment)
-client = OpenAI()
-logger.info("✅ OpenAI client initialized")
+# Azure OpenAI Configuration
+client = AzureOpenAI(
+    api_key=os.getenv("AZURE_OPENAI_KEY"),
+    api_version="2024-10-21",
+    azure_endpoint="https://hkust.azure-api.net"
+)
+logger.info("✅ Azure OpenAI client initialized")
 
 
 async def fetch_instagram_metadata(url: str) -> Optional[Dict]:
@@ -64,13 +69,16 @@ def extract_place_from_caption(caption: str, url: str = None) -> Optional[Dict]:
     3. Return structured data
     """
     # Method 1: Check for 📍 pin emoji
-    pin_pattern = r'📍\s*([^\n#@]+)'
+    # Match place name after 📍, stop before common descriptive words, @mentions, #hashtags, Chinese text, or newlines
+    # Includes: English, numbers, Vietnamese (Latin Extended), common punctuation (&, ', -)
+    pin_pattern = r'📍\s*([a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF\s,\.\-&\']+?)(?=\s+(?:captured|at|in|with|for|and|the|is|was|has|had|have|their|this|that|my|our|your)\b|\s+[@#]|\s+[\u4e00-\u9fff]|\n|$)'
     pin_match = re.search(pin_pattern, caption)
     
     if pin_match:
         place_name = pin_match.group(1).strip()
-        # Clean up
-        place_name = place_name.split('\n')[0].strip()
+        # Clean up trailing punctuation and whitespace
+        place_name = re.sub(r'[\s,;:.!?-]+$', '', place_name)
+        place_name = place_name.strip()
         logger.info(f"✅ Found pin emoji: {place_name}")
         
         # Extract district
@@ -140,7 +148,7 @@ Category: [eat/cafes/bars/shops/leisure/go_out/nature/culture]
             "method": "ai_extraction"
         }
     
-
+    
     
     except Exception as e:
         logger.error(f"❌ Error in AI extraction: {e}")
@@ -164,6 +172,7 @@ async def process_instagram_url(url: str) -> Optional[Dict]:
         logger.warning("⚠️ No caption found in post")
         return None
     
+    # FIXED: Removed 'await' since extract_place_from_caption is NOT async
     place_info = extract_place_from_caption(caption, url)
     if not place_info:
         return None
@@ -217,141 +226,3 @@ def extract_place_manual(caption: str) -> Optional[Dict]:
         "district": district,
         "description": caption[:200],  # First 200 chars
     }
-
-
-async def extract_multiple_places_from_url(url: str) -> List[Dict]:
-    """
-    Extract MULTIPLE places from any URL (Instagram, blog, website, etc.)
-    Returns list of place data ready for Google Places enrichment
-    """
-    # Step 1: Fetch content using Microlink
-    metadata = await fetch_instagram_metadata(url)
-    if not metadata:
-        logger.warning(f"⚠️ Could not fetch metadata from: {url}")
-        return []
-    
-    # Step 2: Extract ALL places from content
-    content = metadata.get("description") or metadata.get("title") or ""
-    if not content:
-        logger.warning("⚠️ No content found")
-        return []
-    
-    # Step 3: Use AI to extract multiple places
-    places = await extract_multiple_places_ai(content)
-    
-    # Add source metadata to each place
-    for place in places:
-        place["source_url"] = url
-        place["source_platform"] = "web"
-        place["source_caption"] = content[:200]
-    
-    return places
-
-
-async def extract_multiple_places_ai(content: str) -> List[Dict]:
-    """
-    Use AI to extract ALL places mentioned in content
-    Returns list of place dictionaries
-    """
-    prompt = f"""Extract ALL restaurants, cafes, bars, or venues mentioned in this content.
-
-Content: {content}
-
-Return a JSON array of places. Each place should have:
-- name: The place name
-- district: Hong Kong district (Central, TST, Wan Chai, etc.) or null
-- category: One of [eat, cafes, bars, shops, leisure, go_out, nature, culture]
-- tags: Array of relevant tags
-
-Example:
-[
-  {{
-    "name": "Bar Leone",
-    "district": "Central",
-    "category": "bars",
-    "tags": ["cocktails", "italian"]
-  }},
-  {{
-    "name": "Teakha",
-    "district": "Sheung Wan",
-    "category": "cafes",
-    "tags": ["tea", "cozy"]
-  }}
-]
-
-If no places found, return empty array: []
-
-IMPORTANT: Return ONLY valid JSON, no other text.
-"""
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that extracts structured data from text. Always respond with valid JSON only."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=1000,
-        )
-        
-        result_text = response.choices[0].message.content.strip()
-        
-        # Parse JSON response
-        places = json.loads(result_text)
-        
-        if not isinstance(places, list):
-            logger.warning("⚠️ AI did not return a list")
-            return []
-        
-        logger.info(f"✅ AI extracted {len(places)} place(s)")
-        return places
-    
-    except json.JSONDecodeError as e:
-        logger.error(f"❌ Failed to parse AI response as JSON: {e}")
-        return []
-    except Exception as e:
-        logger.error(f"❌ Error in AI extraction: {e}")
-        return []
-
-
-def detect_category(place_name: str, description: str = "") -> str:
-    """
-    Use GPT to detect category from place name and description
-    Returns: bar, cafe, restaurant, activity, culture, shop, or place
-    """
-    try:
-        prompt = f"""Categorize this place into ONE category:
-- bar (includes pubs, cocktail bars, wine bars, nightclubs)
-- cafe (includes coffee shops, tea houses, bakeries)
-- restaurant (includes dining, eateries, food places)
-- activity (includes gyms, spas, entertainment, sports)
-- culture (includes museums, galleries, theaters, landmarks)
-- shop (includes retail, boutiques, stores)
-
-Place: {place_name}
-Description: {description[:200]}
-
-Return ONLY the category name (lowercase), nothing else."""
-
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=10
-        )
-        
-        category = response.choices[0].message.content.strip().lower()
-        
-        # Validate category
-        valid_categories = ["bar", "cafe", "restaurant", "activity", "culture", "shop"]
-        if category in valid_categories:
-            logger.info(f"✅ Detected category: {category} for {place_name}")
-            return category
-        else:
-            logger.warning(f"⚠️ Invalid category '{category}' for {place_name}, defaulting to 'place'")
-            return "place"
-            
-    except Exception as e:
-        logger.error(f"❌ Category detection error: {e}")
-        return "place"

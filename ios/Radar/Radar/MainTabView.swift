@@ -19,12 +19,19 @@ struct MainTabView: View {
                 }
                 .tag(1)
 
-            ChatView()
+            ListView()
                 .tabItem {
-                    Image(systemName: selectedTab == 2 ? "message.fill" : "message")
-                    Text("chat")
+                    Image(systemName: selectedTab == 2 ? "list.bullet.rectangle.fill" : "list.bullet.rectangle")
+                    Text("lists")
                 }
                 .tag(2)
+
+            ChatView()
+                .tabItem {
+                    Image(systemName: selectedTab == 3 ? "message.fill" : "message")
+                    Text("chat")
+                }
+                .tag(3)
         }
         .tint(Color(hex: "FC7339")) // iOS 15+ accent for icons/text
     }

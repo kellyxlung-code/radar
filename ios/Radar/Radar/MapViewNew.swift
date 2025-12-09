@@ -399,6 +399,7 @@ struct PlaceDetailSheet: View {
     @Binding var isPresented: Bool
     var onDelete: (() -> Void)? = nil
     @State private var isUpdating = false
+    @State private var showAddToList = false
     
     var body: some View {
         VStack {
@@ -563,6 +564,25 @@ struct PlaceDetailSheet: View {
                             .cornerRadius(22)
                         }
                         .disabled(isUpdating)
+                        
+                        // Add to List button (only show if place is saved)
+                        if place.id > 0 {
+                            Button(action: {
+                                showAddToList = true
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "plus.rectangle.on.folder")
+                                        .font(.system(size: 14))
+                                    Text("add to list")
+                                        .font(.system(size: 14, weight: .semibold))
+                                }
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 12)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(22)
+                            }
+                        }
                     }
                     .padding(.horizontal, 20)
                 }
@@ -580,6 +600,9 @@ struct PlaceDetailSheet: View {
                     isPresented = false
                 }
         )
+        .sheet(isPresented: $showAddToList) {
+            AddToListSheet(place: place)
+        }
     }
     
     var placeholderPhoto: some View {

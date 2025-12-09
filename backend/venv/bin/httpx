@@ -1,4 +1,4 @@
-#!/Users/kellylung/radar/backend/venv/bin/python3.12
+#!/Users/kellylung/radar/backend/venv/bin/python3.13
 import sys
 from httpx import main
 if __name__ == '__main__':

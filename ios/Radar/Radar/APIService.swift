@@ -45,10 +45,10 @@ final class APIService {
     }
 
     // Verify OTP + set password => returns JWT
-    func verifyOTP(phoneNumber: String,
-                   otpCode: String,
-                   password: String,
-                   completion: @escaping (Result<TokenResponse, Error>) -> Void) {
+	func verifyOTP(phoneNumber: String,
+	                   otpCode: String,
+	                   password: String,
+	                   completion: @escaping (Result<TokenResponse, Error>) -> Void) {
         guard let url = URL(string: "\(baseURL)/auth/verify-otp") else { return }
 
         var request = URLRequest(url: url)
@@ -109,7 +109,43 @@ final class APIService {
                     }
                 }
                 completion(.failure(error))
-            }
-        }.resume()
-    }
-}
+	            }
+	        }.resume()
+	    }
+	    
+	    // MARK: - Popular Places
+	    
+	    func getPopularPlaces(completion: @escaping (Result<[Place], Error>) -> Void) {
+	        guard let url = URL(string: "\(baseURL)/popular-places") else {
+	            completion(.failure(APIError.invalidURL))
+	            return
+	        }
+	        
+	        var request = URLRequest(url: url)
+	        request.httpMethod = "GET"
+	        
+	        // Add JWT token
+	        if let token = KeychainHelper.shared.getToken() {
+	            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+	        }
+	        
+	        URLSession.shared.dataTask(with: request) { data, response, error in
+	            if let error = error {
+	                completion(.failure(error))
+	                return
+	            }
+	            
+	            guard let data = data else {
+	                completion(.failure(APIError.noData))
+	                return
+	            }
+	            
+	            do {
+	                let decodedPlaces = try JSONDecoder().decode([Place].self, from: data)
+	                completion(.success(decodedPlaces))
+	            } catch {
+	                completion(.failure(error))
+	            }
+	        }.resume()
+	    }
+	}

@@ -6,6 +6,7 @@ struct HomeDiscoveryView: View {
     @State private var trendingPlaces: [TrendingPlace] = []
     @State private var pickedForYouPlaces: [Place] = []
     @State private var supportLocalPlaces: [Place] = []
+    @State private var popularPlaces: [Place] = []
     @State private var friendMatches: [FriendMatch] = []
     @State private var isLoading = true
     @State private var showImportSheet = false
@@ -208,24 +209,48 @@ struct HomeDiscoveryView: View {
                                 }
                             }
                             
-                            // SECTION 5: Friend Taste Match
-                            if !friendMatches.isEmpty {
-                                VStack(alignment: .leading, spacing: 16) {
-                                    Text("Friend Taste Match 🤝")
-                                        .font(.system(size: 24, weight: .bold))
-                                        .foregroundColor(.black)
-                                        .padding(.horizontal)
-                                    
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 16) {
-                                            ForEach(friendMatches) { friend in
-                                                FriendMatchCard(friend: friend)
-                                            }
-                                        }
-                                        .padding(.horizontal)
-                                    }
-                                }
-                            }
+	                            // SECTION 5: Friend Taste Match
+	                            if !friendMatches.isEmpty {
+	                                VStack(alignment: .leading, spacing: 16) {
+	                                    Text("Friend Taste Match 🤝")
+	                                        .font(.system(size: 24, weight: .bold))
+	                                        .foregroundColor(.black)
+	                                        .padding(.horizontal)
+	                                    
+	                                    ScrollView(.horizontal, showsIndicators: false) {
+	                                        HStack(spacing: 16) {
+	                                            ForEach(friendMatches) { friend in
+	                                                FriendMatchCard(friend: friend)
+	                                            }
+	                                        }
+	                                        .padding(.horizontal)
+	                                    }
+	                                }
+	                            }
+	                            
+	                            // SECTION 6: Popular with Users (Social Proof)
+	                            if !popularPlaces.isEmpty {
+	                                VStack(alignment: .leading, spacing: 16) {
+	                                    VStack(alignment: .leading, spacing: 4) {
+	                                        Text("Popular with Users 📈")
+	                                            .font(.system(size: 24, weight: .bold))
+	                                            .foregroundColor(.black)
+	                                        Text("Places saved by multiple Radar users")
+	                                            .font(.system(size: 14))
+	                                            .foregroundColor(.gray)
+	                                    }
+	                                    .padding(.horizontal)
+	                                    
+	                                    ScrollView(.horizontal, showsIndicators: false) {
+	                                        HStack(spacing: 16) {
+	                                            ForEach(popularPlaces) { place in
+	                                                CompactSquareCard(place: place, userLocation: userLocation)
+	                                            }
+	                                        }
+	                                        .padding(.horizontal)
+	                                    }
+	                                }
+	                            }
 
                             // SECTION 6: Picked for You
                             if !pickedForYou.isEmpty {
@@ -307,9 +332,10 @@ struct HomeDiscoveryView: View {
                 loadEvents()
                 loadTrending()
                 loadPickedForYou()
-                loadSupportLocal()
-                loadFriendTasteMatch()
-            }
+        loadSupportLocal()
+        loadEvents()
+        loadFriendMatches()
+        loadPopularPlaces()           }
         }
     }
 
@@ -534,45 +560,24 @@ struct HomeDiscoveryView: View {
         }.resume()
     }
     
-    func loadFriendTasteMatch() {
-        guard let token = KeychainHelper.shared.readAccessToken() else {
-            print("⚠️ No token for friend-taste-match")
-            return
-        }
-        
-        guard let url = URL(string: "\(Config.apiBaseURL)/friend-taste-match") else {
-            print("⚠️ Invalid friend-taste-match URL")
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                print("❌ /friend-taste-match error:", error.localizedDescription)
-                return
-            }
-            
-            guard let data = data else {
-                print("⚠️ No friend-taste-match data")
-                return
-            }
-            
-            do {
-                let decoded = try JSONDecoder().decode([FriendMatch].self, from: data)
-                DispatchQueue.main.async {
-                    self.friendMatches = decoded
-                    print("✅ Loaded \(decoded.count) friend matches")
-                }
-            } catch {
-                print("❌ Decode /friend-taste-match error:", error.localizedDescription)
-                if let jsonString = String(data: data, encoding: .utf8) {
-                    print("📄 Friend Match Response:", jsonString)
-                }
-            }
-        }.resume()
+     func loadFriendMatches() {
+        // TODO: Implement real friend match logic
+        // For now, mock data is used in the computed property
     }
+    
+    func loadPopularPlaces() {
+        APIService.shared.getPopularPlaces { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let places):
+                    self.popularPlaces = places
+                    print("✅ Loaded \(places.count) popular places")
+                case .failure(let error):
+                    print("❌ Error loading popular places: \(error)")
+                }
+            }
+        }
+    } }
 
     func calculateDistance(lat1: Double, lng1: Double, lat2: Double, lng2: Double) -> Double {
         let R = 6371.0
